@@ -18,6 +18,7 @@ export class Hud {
   private linkBox = document.createElement("div");
   private connChip = document.createElement("span");
   private sideChip = document.createElement("span");
+  private scoreChip = document.createElement("span");
 
   constructor(private root: HTMLElement, cbs: HudCallbacks, initialMode: Mode) {
     this.statusEl.className = "status";
@@ -46,7 +47,9 @@ export class Hud {
     this.connChip.style.display = "none";
     this.sideChip.className = "side-chip";
     this.sideChip.style.display = "none";
-    root.append(this.sideChip, this.connChip, this.linkBox);
+    this.scoreChip.className = "score-chip";
+    this.scoreChip.style.display = "none";
+    root.append(this.scoreChip, this.sideChip, this.connChip, this.linkBox);
   }
 
   setStatus(text: string): void {
@@ -108,6 +111,21 @@ export class Hud {
     this.sideChip.style.display = "inline-block";
     this.sideChip.textContent = `You: ${side}`;
     this.sideChip.dataset.side = side;
+  }
+
+  /** Show the running win tally. From the local player's perspective when
+   *  `localSide` is given ("You 2 – 1 Them"); otherwise by color ("Yellow 2 – 1
+   *  Green"). Pass null score to hide. */
+  showScore(score: { yellow: number; green: number } | null, localSide?: "yellow" | "green" | null): void {
+    if (score === null) { this.scoreChip.style.display = "none"; return; }
+    this.scoreChip.style.display = "inline-block";
+    if (localSide) {
+      const mine = score[localSide];
+      const theirs = localSide === "yellow" ? score.green : score.yellow;
+      this.scoreChip.textContent = `You ${mine} – ${theirs} Them`;
+    } else {
+      this.scoreChip.textContent = `Yellow ${score.yellow} – ${score.green} Green`;
+    }
   }
 
   /** Show/refresh the connection-status chip. */

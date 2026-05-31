@@ -8,10 +8,23 @@ export interface MoveDelta {
   hash: string; // hashLog of the move log AFTER applying this move
 }
 
+/** Running per-color win tally for the room. Transmitted only on `sync` (tiny:
+ *  two ints) and reconciled by element-wise max — scores only ever increase, so
+ *  max is idempotent across reconnects and avoids double-counting. */
+export interface Score {
+  yellow: number;
+  green: number;
+}
+
 export type WireMsg =
   | { type: "move"; delta: MoveDelta }
-  | { type: "sync"; log: string }
+  | { type: "sync"; log: string; score?: Score }
   | { type: "newgame" };
+
+/** Element-wise max of two scores. Idempotent reconciliation for `sync`. */
+export function mergeScores(a: Score, b: Score): Score {
+  return { yellow: Math.max(a.yellow, b.yellow), green: Math.max(a.green, b.green) };
+}
 
 /** FNV-1a (32-bit) over the canonical move-log string. Deterministic, fast,
  *  and good enough as a desync tripwire (not a security hash). */

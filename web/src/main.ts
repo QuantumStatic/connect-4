@@ -9,7 +9,7 @@ import { Hud } from "./ui/hud";
 import { Session } from "./net/session";
 import { RtcPeer } from "./net/peer";
 import { getIceConfig } from "./net/signal";
-import { hashLog, validateIncoming, reconcileLogs, type WireMsg } from "./game/protocol";
+import { hashLog, validateIncoming, reconcileLogs, mergeScores, type WireMsg, type Score } from "./game/protocol";
 
 const GOOD_DEPTH = 10;
 
@@ -28,6 +28,11 @@ class Game {
   private session: Session | null = null;
   private remoteSide: Cell | null = null;
   private roomId = "";
+  // Running win tally for friend mode. Computed locally on each side from the
+  // canonical move log (no per-game history sent) and reconciled on sync via
+  // element-wise max. `gameScored` makes the per-game increment idempotent.
+  private score: Score = { yellow: 0, green: 0 };
+  private gameScored = false;
 
   constructor(public scene: Scene, public hud: Hud, public sfx: Sfx) {}
 
@@ -37,6 +42,8 @@ class Game {
       this.state = GameState.fromSequence(saved.moves);
       this.mode = saved.mode;
       this.localSide = saved.humanSide;
+      if (saved.score) this.score = saved.score;
+      this.gameScored = this.state.status === "won"; // already tallied if finished
     } else {
       clear();
     }
@@ -46,9 +53,22 @@ class Game {
   }
 
   private updateStatus(): void {
+    // Count a win exactly once per game, the moment the board resolves. Both
+    // peers reach the same final move log, so they tally identically without
+    // sending the score per move.
+    if (this.state.status === "won" && this.state.winner && !this.gameScored) {
+      this.gameScored = true;
+      this.score[this.state.winner] += 1;
+      this.persistScore();
+    }
     if (this.state.status === "won") this.hud.setStatus(`${this.state.winner} wins`);
     else if (this.state.status === "draw") this.hud.setStatus("draw");
     else this.hud.setStatus(`${this.state.toMove} to move`);
+    if (this.mode === "friend") this.hud.showScore(this.score, this.localSide);
+  }
+
+  private persistScore(): void {
+    save(this.state, this.mode, this.localSide, this.mode === "friend" ? this.roomId : undefined, this.score);
   }
 
   setMode(mode: Mode): void {
@@ -56,7 +76,7 @@ class Game {
     if (mode === "friend") { void this.startFriend(); return; }
     this.localSide = mode === "2P" ? null : "yellow";
     this.session?.close(); this.session = null; this.remoteSide = null;
-    this.hud.showConnState(null); this.hud.hideHostLink(); this.hud.showLocalSide(null);
+    this.hud.showConnState(null); this.hud.hideHostLink(); this.hud.showLocalSide(null); this.hud.showScore(null);
     save(this.state, this.mode, this.localSide);
     void this.pump();
   }
@@ -76,9 +96,10 @@ class Game {
   private resetBoard(): void {
     this.state = new GameState();
     this.pendingCol = null;
+    this.gameScored = false; // new game — but the running score is preserved
     this.scene.setQueuedChip(null);
     this.scene.syncFromState(this.state);
-    save(this.state, this.mode, this.localSide, this.mode === "friend" ? this.roomId : undefined);
+    save(this.state, this.mode, this.localSide, this.mode === "friend" ? this.roomId : undefined, this.score);
     this.updateStatus();
     void this.pump();
   }
@@ -227,7 +248,12 @@ class Game {
     const role: "host" | "guest" = joinId && !isRehost ? "guest" : "host";
     this.localSide = role === "host" ? "yellow" : "green";
     this.remoteSide = role === "host" ? "green" : "yellow";
+    // Resume the tally only when re-hosting our own room; a brand-new room or a
+    // fresh guest starts at 0–0 (the guest then adopts the host's via sync).
+    this.score = isRehost && saved?.score ? saved.score : { yellow: 0, green: 0 };
+    this.gameScored = this.state.status === "won";
     this.hud.showLocalSide(this.localSide);
+    this.hud.showScore(this.score, this.localSide);
     this.hud.showConnState("connecting");
 
     let ice: RTCIceServer[];
@@ -248,7 +274,7 @@ class Game {
       if (s === "connected") {
         connected = true;
         window.clearTimeout(handshakeTimeout);
-        this.session?.send({ type: "sync", log: this.state.moves });
+        this.session?.send({ type: "sync", log: this.state.moves, score: this.score });
       } else if (s === "disconnected" && !connected) {
         window.clearTimeout(handshakeTimeout);
         this.handshakeFailed(role);
@@ -309,11 +335,25 @@ class Game {
       return;
     }
     if (m.type === "sync") {
+      // Reconcile the score first (element-wise max — idempotent). Adopt the
+      // merged tally so a peer joining mid-series picks up the running score.
+      if (m.score) {
+        const merged = mergeScores(this.score, m.score);
+        if (merged.yellow !== this.score.yellow || merged.green !== this.score.green) {
+          this.score = merged;
+          this.persistScore();
+          this.hud.showScore(this.score, this.localSide);
+        }
+      }
       const agreed = reconcileLogs(this.state.moves, m.log);
       if (agreed === "conflict") { this.hud.toast("Game out of sync — start a new game."); return; }
       if (agreed !== this.state.moves) {
         this.state = GameState.fromSequence(agreed);
         this.scene.syncFromState(this.state);
+        // If we adopted a finished game, the sender already tallied it and sent
+        // it in m.score (merged above) — so suppress the local increment to
+        // avoid double-counting. (Only when the peer actually sent a score.)
+        if (this.state.status === "won" && m.score) this.gameScored = true;
         this.updateStatus();
       }
       return;

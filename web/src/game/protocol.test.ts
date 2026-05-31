@@ -1,7 +1,7 @@
 // web/src/game/protocol.test.ts
 import { describe, expect, it } from "vitest";
 import { GameState } from "./state";
-import { hashLog, makeDelta, validateIncoming, reconcileLogs, type WireMsg } from "./protocol";
+import { hashLog, makeDelta, validateIncoming, reconcileLogs, mergeScores, type WireMsg } from "./protocol";
 
 describe("hashLog", () => {
   it("is deterministic and order-sensitive", () => {
@@ -82,6 +82,25 @@ describe("WireMsg union", () => {
     const m: WireMsg = { type: "sync", log: "334" };
     expect(m.type).toBe("sync");
     if (m.type === "sync") expect(m.log).toBe("334");
+  });
+  it("accepts a sync variant carrying a score", () => {
+    const m: WireMsg = { type: "sync", log: "33", score: { yellow: 2, green: 1 } };
+    if (m.type === "sync") expect(m.score).toEqual({ yellow: 2, green: 1 });
+  });
+});
+
+describe("mergeScores", () => {
+  it("takes the element-wise maximum", () => {
+    expect(mergeScores({ yellow: 2, green: 1 }, { yellow: 1, green: 3 }))
+      .toEqual({ yellow: 2, green: 3 });
+  });
+  it("is idempotent — merging equal scores is a no-op", () => {
+    const s = { yellow: 4, green: 2 };
+    expect(mergeScores(s, { ...s })).toEqual(s);
+  });
+  it("adopts a peer's higher tally (mid-series join)", () => {
+    expect(mergeScores({ yellow: 0, green: 0 }, { yellow: 3, green: 2 }))
+      .toEqual({ yellow: 3, green: 2 });
   });
 });
 

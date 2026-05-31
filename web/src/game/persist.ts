@@ -5,19 +5,28 @@ import { GameState } from "./state";
 
 export type Mode = "2P" | "good" | "great" | "friend";
 
+export interface Score { yellow: number; green: number; }
+
 export interface SavedGame {
   moves: string;
   mode: Mode;
   humanSide: "yellow" | "green" | null; // localSide in vs-AI / friend; null in 2P
   roomId?: string; // present in friend mode
+  score?: Score; // running room-wide tally (friend mode)
   ts: number;
 }
 
-// v3: added "friend" mode + roomId.
+// v3: added "friend" mode + roomId. score is optional + back-compat (no key bump).
 const KEY = "connect4:save:v3";
 
-export function save(g: GameState, mode: Mode, humanSide: SavedGame["humanSide"], roomId?: string): void {
-  const data: SavedGame = { moves: g.moves, mode, humanSide, roomId, ts: Date.now() };
+export function save(
+  g: GameState,
+  mode: Mode,
+  humanSide: SavedGame["humanSide"],
+  roomId?: string,
+  score?: Score,
+): void {
+  const data: SavedGame = { moves: g.moves, mode, humanSide, roomId, score, ts: Date.now() };
   try { localStorage.setItem(KEY, JSON.stringify(data)); } catch { /* quota — ignore */ }
 }
 

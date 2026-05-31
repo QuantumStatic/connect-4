@@ -45,6 +45,20 @@ describe("persist", () => {
     expect(loaded!.roomId).toBeUndefined();
   });
 
+  it("round-trips the running score in friend mode", () => {
+    const g = new GameState();
+    g.applyMove(3);
+    save(g, "friend", "yellow", "room1", { yellow: 2, green: 1 });
+    const loaded = load();
+    expect(loaded!.score).toEqual({ yellow: 2, green: 1 });
+  });
+
+  it("leaves score undefined when not provided (back-compat)", () => {
+    const g = new GameState();
+    save(g, "friend", "yellow", "room1");
+    expect(load()!.score).toBeUndefined();
+  });
+
   it("round-trips 2P mode with null humanSide and no roomId", () => {
     const g = new GameState();
     g.applyMove(0);

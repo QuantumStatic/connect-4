@@ -39,3 +39,35 @@ describe("Hud.showLocalSide", () => {
     expect(chip.style.display).toBe("none");
   });
 });
+
+describe("Hud.showScore", () => {
+  it("renders from the local player's perspective when localSide is given", () => {
+    const { hud, root } = makeHud();
+    hud.showScore({ yellow: 2, green: 1 }, "yellow");
+    const chip = root.querySelector(".score-chip") as HTMLElement;
+    expect(chip.style.display).not.toBe("none");
+    expect(chip.textContent).toBe("You 2 – 1 Them");
+  });
+
+  it("flips the perspective for the green player", () => {
+    const { hud, root } = makeHud();
+    hud.showScore({ yellow: 2, green: 1 }, "green");
+    const chip = root.querySelector(".score-chip") as HTMLElement;
+    expect(chip.textContent).toBe("You 1 – 2 Them");
+  });
+
+  it("falls back to color labels without a localSide", () => {
+    const { hud, root } = makeHud();
+    hud.showScore({ yellow: 3, green: 0 });
+    const chip = root.querySelector(".score-chip") as HTMLElement;
+    expect(chip.textContent).toBe("Yellow 3 – 0 Green");
+  });
+
+  it("hides the chip when called with null", () => {
+    const { hud, root } = makeHud();
+    hud.showScore({ yellow: 1, green: 1 }, "yellow");
+    hud.showScore(null);
+    const chip = root.querySelector(".score-chip") as HTMLElement;
+    expect(chip.style.display).toBe("none");
+  });
+});

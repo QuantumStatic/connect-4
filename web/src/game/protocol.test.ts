@@ -1,7 +1,7 @@
 // web/src/game/protocol.test.ts
 import { describe, expect, it } from "vitest";
 import { GameState } from "./state";
-import { hashLog, makeDelta, validateIncoming, reconcileLogs } from "./protocol";
+import { hashLog, makeDelta, validateIncoming, reconcileLogs, type WireMsg } from "./protocol";
 
 describe("hashLog", () => {
   it("is deterministic and order-sensitive", () => {
@@ -70,6 +70,18 @@ describe("validateIncoming", () => {
     const g = GameState.fromSequence("3");
     const d = { ply: 1, col: 4, hash: "bad-hash" };
     expect(validateIncoming(g, d, "green")).toBe("desync");
+  });
+});
+
+describe("WireMsg union", () => {
+  it("accepts a newgame variant", () => {
+    const m: WireMsg = { type: "newgame" };
+    expect(m.type).toBe("newgame");
+  });
+  it("accepts a sync variant with a log", () => {
+    const m: WireMsg = { type: "sync", log: "334" };
+    expect(m.type).toBe("sync");
+    if (m.type === "sync") expect(m.log).toBe("334");
   });
 });
 

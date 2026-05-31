@@ -90,16 +90,25 @@ export class Scene {
   startYAbove(): number { return CHIP_R + 4; }
 
   private attachInput(): void {
-    this.app.canvas.addEventListener("pointermove", (ev: PointerEvent) => {
+    // Disable iOS double-tap-zoom on the board so taps register cleanly.
+    this.app.canvas.style.touchAction = "manipulation";
+    const colFromEvent = (ev: PointerEvent): number | null => {
       const rect = this.app.canvas.getBoundingClientRect();
-      const x = ev.clientX - rect.left;
-      if (x < PAD || x > BOARD_W - PAD) { this.setHover(null); return; }
+      // Canvas is CSS-scaled on small screens — map back into BOARD_W space.
+      const scaleX = BOARD_W / rect.width;
+      const x = (ev.clientX - rect.left) * scaleX;
+      if (x < PAD || x > BOARD_W - PAD) return null;
       const col = Math.floor((x - PAD) / CELL);
-      this.setHover(col >= 0 && col < COLS ? col : null);
-    });
+      return col >= 0 && col < COLS ? col : null;
+    };
+    this.app.canvas.addEventListener("pointermove", (ev: PointerEvent) => this.setHover(colFromEvent(ev)));
     this.app.canvas.addEventListener("pointerleave", () => this.setHover(null));
-    this.app.canvas.addEventListener("pointerdown", () => {
-      if (this.hoverCol !== null) this.opts.onColumnClick(this.hoverCol);
+    this.app.canvas.addEventListener("pointerdown", (ev: PointerEvent) => {
+      // Compute the column directly from the event. On touch devices a tap
+      // never fires `pointermove` first, so relying on the cached hoverCol
+      // would silently drop iPad/phone taps.
+      const col = colFromEvent(ev);
+      if (col !== null) this.opts.onColumnClick(col);
     });
   }
 

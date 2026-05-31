@@ -17,6 +17,7 @@ export class Hud {
   private thinking = false;
   private linkBox = document.createElement("div");
   private connChip = document.createElement("span");
+  private sideChip = document.createElement("span");
 
   constructor(private root: HTMLElement, cbs: HudCallbacks, initialMode: Mode) {
     this.statusEl.className = "status";
@@ -43,7 +44,9 @@ export class Hud {
     this.linkBox.style.display = "none";
     this.connChip.className = "conn-chip";
     this.connChip.style.display = "none";
-    root.append(this.connChip, this.linkBox);
+    this.sideChip.className = "side-chip";
+    this.sideChip.style.display = "none";
+    root.append(this.sideChip, this.connChip, this.linkBox);
   }
 
   setStatus(text: string): void {
@@ -97,6 +100,15 @@ export class Hud {
   }
 
   hideHostLink(): void { this.linkBox.style.display = "none"; }
+
+  /** Tell the player which color they're playing in friend mode.
+   *  Pass null to hide the chip (when leaving friend mode). */
+  showLocalSide(side: "yellow" | "green" | null): void {
+    if (side === null) { this.sideChip.style.display = "none"; return; }
+    this.sideChip.style.display = "inline-block";
+    this.sideChip.textContent = `You: ${side}`;
+    this.sideChip.dataset.side = side;
+  }
 
   /** Show/refresh the connection-status chip. */
   showConnState(state: "connecting" | "connected" | "reconnecting" | "disconnected" | null): void {

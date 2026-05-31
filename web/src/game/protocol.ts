@@ -10,7 +10,8 @@ export interface MoveDelta {
 
 export type WireMsg =
   | { type: "move"; delta: MoveDelta }
-  | { type: "sync"; log: string };
+  | { type: "sync"; log: string }
+  | { type: "newgame" };
 
 /** FNV-1a (32-bit) over the canonical move-log string. Deterministic, fast,
  *  and good enough as a desync tripwire (not a security hash). */

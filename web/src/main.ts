@@ -56,7 +56,7 @@ class Game {
     if (mode === "friend") { void this.startFriend(); return; }
     this.localSide = mode === "2P" ? null : "yellow";
     this.session?.close(); this.session = null; this.remoteSide = null;
-    this.hud.showConnState(null); this.hud.hideHostLink();
+    this.hud.showConnState(null); this.hud.hideHostLink(); this.hud.showLocalSide(null);
     save(this.state, this.mode, this.localSide);
     void this.pump();
   }
@@ -65,6 +65,15 @@ class Game {
     // Ignore while a chip is mid-drop — otherwise the in-flight animation
     // would resolve onto a fresh state and plant a phantom chip.
     if (this.busy) return;
+    this.resetBoard();
+    // In friend mode, tell the other side to reset too. Without this, the
+    // remote keeps the finished board and the two go out of sync.
+    if (this.mode === "friend" && this.session) this.session.send({ type: "newgame" });
+  }
+
+  /** Reset to a fresh board locally — used by both New Game (initiator) and
+   *  by an incoming "newgame" message from the peer (no echo to avoid loops). */
+  private resetBoard(): void {
     this.state = new GameState();
     this.pendingCol = null;
     this.scene.setQueuedChip(null);
@@ -210,6 +219,7 @@ class Game {
     const role: "host" | "guest" = joinId ? "guest" : "host";
     this.localSide = role === "host" ? "yellow" : "green";
     this.remoteSide = role === "host" ? "green" : "yellow";
+    this.hud.showLocalSide(this.localSide);
     this.hud.showConnState("connecting");
 
     let ice: RTCIceServer[];
@@ -235,6 +245,12 @@ class Game {
   }
 
   private onWire(m: WireMsg): void {
+    if (m.type === "newgame") {
+      // Peer hit "New game" — mirror locally without echoing back.
+      this.hud.toast("Your opponent started a new game.");
+      this.resetBoard();
+      return;
+    }
     if (m.type === "sync") {
       const agreed = reconcileLogs(this.state.moves, m.log);
       if (agreed === "conflict") { this.hud.toast("Game out of sync — start a new game."); return; }

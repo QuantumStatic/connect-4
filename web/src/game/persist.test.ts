@@ -34,6 +34,17 @@ describe("persist", () => {
     expect(loaded!.moves).toBe("32");
   });
 
+  it("round-trips friend mode as green with no roomId (rehost-detection contract)", () => {
+    const g = new GameState();
+    g.applyMove(3);
+    save(g, "friend", "green");
+    const loaded = load();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.mode).toBe("friend");
+    expect(loaded!.humanSide).toBe("green");
+    expect(loaded!.roomId).toBeUndefined();
+  });
+
   it("round-trips 2P mode with null humanSide and no roomId", () => {
     const g = new GameState();
     g.applyMove(0);

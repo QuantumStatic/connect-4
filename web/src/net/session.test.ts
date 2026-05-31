@@ -59,6 +59,30 @@ describe("Session", () => {
     expect(signal.pushOffer).toHaveBeenCalledWith("ROOM", "restart#1", 1);
   });
 
+  it("rehost fetches current epoch, creates a fresh offer, pushes at epoch+1", async () => {
+    const peer = new FakePeer();
+    const signal = stubSignal();
+    signal.store.offer = "old-sdp";
+    signal.store.offerEpoch = 0;
+    const s = new Session({ peer, signal: signal as any, role: "host" });
+    await s.rehost("room123");
+    expect(signal.fetchOffer).toHaveBeenCalledWith("room123");
+    expect(peer.offers).toBe(1);
+    expect(signal.pushOffer).toHaveBeenCalledWith("room123", "offer#1", 1);
+    expect(signal.store.offerEpoch).toBe(1);
+  });
+
+  it("rehost background-polls for an answer and accepts it", async () => {
+    const peer = new FakePeer();
+    const acceptSpy = vi.spyOn(peer, "acceptAnswer");
+    const signal = stubSignal();
+    const s = new Session({ peer, signal: signal as any, role: "host" });
+    await s.rehost("room123");
+    // simulate a guest posting an answer at the new epoch
+    await signal.postAnswer("room123", "guest-answer", 1);
+    await vi.waitFor(() => expect(acceptSpy).toHaveBeenCalledWith("guest-answer"), { timeout: 3000 });
+  });
+
   it("on reconnecting, the GUEST does NOT issue an offer (no glare)", async () => {
     const peer = new FakePeer();
     const signal = stubSignal();

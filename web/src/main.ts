@@ -216,7 +216,15 @@ class Game {
   async startFriend(): Promise<void> {
     this.mode = "friend";
     const joinId = new URLSearchParams(location.hash.slice(1)).get("join");
-    const role: "host" | "guest" = joinId ? "guest" : "host";
+    // If this device is reopening a link to a room it originally hosted (saved
+    // state says we were yellow + roomId matches), take back the host slot
+    // instead of joining. This handles "closed my tab, clicked the link again".
+    const saved = load();
+    const isRehost = !!joinId
+      && saved?.mode === "friend"
+      && saved.humanSide === "yellow"
+      && saved.roomId === joinId;
+    const role: "host" | "guest" = joinId && !isRehost ? "guest" : "host";
     this.localSide = role === "host" ? "yellow" : "green";
     this.remoteSide = role === "host" ? "green" : "yellow";
     this.hud.showLocalSide(this.localSide);
@@ -249,7 +257,14 @@ class Game {
     this.session.onMessage((m) => this.onWire(m));
 
     try {
-      if (role === "host") {
+      if (isRehost) {
+        // Resuming our own room — re-publish a fresh offer at a new epoch.
+        this.roomId = joinId!;
+        await this.session.rehost(joinId!);
+        const url = `${location.origin}${location.pathname}#join=${this.roomId}`;
+        this.hud.showHostLink(url);
+        this.hud.toast("Reopened your room — share the link again if needed.", 4500);
+      } else if (role === "host") {
         this.roomId = await this.session.host();
         const url = `${location.origin}${location.pathname}#join=${this.roomId}`;
         this.hud.showHostLink(url);

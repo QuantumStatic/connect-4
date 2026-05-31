@@ -61,6 +61,19 @@ export class Session {
     this.answerSince = epoch;
   }
 
+  /** Take back an existing room as host. Used when a host closes their tab and
+   *  re-opens the same shareable link (their old SDP in KV is stale). Bumps the
+   *  offer epoch so a fresh guest fetches the new SDP, not the dead one. */
+  async rehost(id: string): Promise<void> {
+    this.roomId = id;
+    const current = await this.signal.fetchOffer(id); // current latest epoch
+    const offer = await this.peer.createOffer();
+    this.epoch = current.epoch + 1;
+    await this.signal.pushOffer(id, offer, this.epoch);
+    this.answerSince = current.epoch; // wait for an answer at our new epoch
+    void this.awaitAnswer();
+  }
+
   private async awaitAnswer(): Promise<void> {
     for (;;) {
       const got = await this.signal.pollAnswer(this.roomId, this.answerSince);

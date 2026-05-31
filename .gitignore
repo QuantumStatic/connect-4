@@ -209,6 +209,20 @@ tempCodeRunnerFile.py
 # PyPI configuration file
 .pypirc
 
+# Node.js
+node_modules/
+*.tsbuildinfo
+
+# Claude Code session state
+.claude/
+
+# Git worktrees
+.worktrees/
+
+# Opening book — downloaded via solver/fetch_opening_book.py, too large to commit
+solver/data/
+*.book
+
 # Marimo
 marimo/_static/
 marimo/_lsp/

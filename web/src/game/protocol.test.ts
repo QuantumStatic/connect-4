@@ -1,0 +1,87 @@
+// web/src/game/protocol.test.ts
+import { describe, expect, it } from "vitest";
+import { GameState } from "./state";
+import { hashLog, makeDelta, validateIncoming, reconcileLogs } from "./protocol";
+
+describe("hashLog", () => {
+  it("is deterministic and order-sensitive", () => {
+    expect(hashLog("3342")).toBe(hashLog("3342"));
+    expect(hashLog("3342")).not.toBe(hashLog("3324"));
+  });
+  it("empty log hashes to a stable 8-hex-char FNV-1a value", () => {
+    expect(hashLog("")).toMatch(/^[0-9a-f]{8}$/);
+    // FNV-1a offset basis for empty input
+    expect(hashLog("")).toBe("811c9dc5");
+  });
+});
+
+describe("makeDelta", () => {
+  it("captures ply, column, and post-move hash", () => {
+    const g = GameState.fromSequence("33"); // 2 moves played; next ply index = 2
+    const d = makeDelta(g, 4);
+    expect(d).toEqual({ ply: 2, col: 4, hash: hashLog("334") });
+  });
+});
+
+describe("validateIncoming", () => {
+  // localSide = "yellow" (host), so opponent = "green".
+  // After "3" (yellow moved), it is green's turn at ply 1.
+  it("accepts a legal opponent move at the expected ply", () => {
+    const g = GameState.fromSequence("3");
+    const d = { ply: 1, col: 4, hash: hashLog("34") };
+    expect(validateIncoming(g, d, "green")).toBe("ok");
+  });
+  it("flags an already-applied ply as duplicate", () => {
+    const prior = GameState.fromSequence("3");
+    const stale = makeDelta(prior, 4);          // ply 1, hash matches "34"
+    const g = GameState.fromSequence("34");      // state has already advanced past it
+    expect(validateIncoming(g, stale, "green")).toBe("duplicate");
+  });
+  it("flags a future ply (gap in delivery) as desync", () => {
+    const g = GameState.fromSequence("3");      // next ply = 1
+    const d = { ply: 5, col: 4, hash: "anything" };
+    expect(validateIncoming(g, d, "green")).toBe("desync");
+  });
+  it("rejects an out-of-range column as illegal", () => {
+    const g = GameState.fromSequence("3");      // green's turn at ply 1
+    const dHigh = { ply: 1, col: 7, hash: "x" };
+    const dLow = { ply: 1, col: -1, hash: "x" };
+    expect(validateIncoming(g, dHigh, "green")).toBe("illegal");
+    expect(validateIncoming(g, dLow, "green")).toBe("illegal");
+  });
+  it("rejects any move once the game is already won", () => {
+    const g = GameState.fromSequence("0102030"); // yellow wins vertically in col 0
+    expect(g.status).toBe("won");
+    const d = { ply: 7, col: 4, hash: "x" };
+    expect(validateIncoming(g, d, "green")).toBe("illegal");
+  });
+  it("rejects a move into a full column as illegal", () => {
+    const g = GameState.fromSequence("000000" + "1"); // col 0 full (6), then yellow plays 1
+    // it's green's turn at ply 7; col 0 is full → illegal
+    const d = { ply: 7, col: 0, hash: "whatever" };
+    expect(validateIncoming(g, d, "green")).toBe("illegal");
+  });
+  it("rejects a move when it is NOT the opponent's turn", () => {
+    const g = GameState.fromSequence("34"); // it's yellow's turn (ply 2)
+    const d = { ply: 2, col: 5, hash: hashLog("345") };
+    expect(validateIncoming(g, d, "green")).toBe("illegal"); // green moving on yellow's turn
+  });
+  it("flags a hash mismatch as desync", () => {
+    const g = GameState.fromSequence("3");
+    const d = { ply: 1, col: 4, hash: "bad-hash" };
+    expect(validateIncoming(g, d, "green")).toBe("desync");
+  });
+});
+
+describe("reconcileLogs", () => {
+  it("returns the longer log when the shorter is a prefix", () => {
+    expect(reconcileLogs("33", "3342")).toBe("3342");
+    expect(reconcileLogs("3342", "33")).toBe("3342");
+  });
+  it("returns equal log unchanged", () => {
+    expect(reconcileLogs("3342", "3342")).toBe("3342");
+  });
+  it("returns 'conflict' when neither is a prefix of the other", () => {
+    expect(reconcileLogs("334", "335")).toBe("conflict");
+  });
+});

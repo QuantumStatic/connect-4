@@ -1,0 +1,4 @@
+[submodule "solver/vendor/connect4"]
+	path = solver/vendor/connect4
+	url = https://github.com/PascalPons/connect4.git
+	shallow = true

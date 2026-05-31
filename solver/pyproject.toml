@@ -1,0 +1,15 @@
+# solver/pyproject.toml
+[build-system]
+requires = ["scikit-build-core>=0.8", "pybind11>=2.11"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "pyconnect4"
+version = "0.1.0"
+description = "Pascal Pons Connect 4 solver (Python binding)"
+requires-python = ">=3.11"
+license = { text = "AGPL-3.0-only" }
+
+[tool.scikit-build]
+wheel.packages = ["pyconnect4"]
+cmake.version = ">=3.18"

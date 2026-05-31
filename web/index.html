@@ -16,7 +16,7 @@
       .status.thinking .think-dot { opacity: 1; animation: think-pulse 0.9s ease-in-out infinite; }
       .status.thinking { color: #e6c437; }
       @keyframes think-pulse { 0%, 100% { transform: scale(0.6); opacity: 0.5; } 50% { transform: scale(1); opacity: 1; } }
-      .toast { position: fixed; top: 16px; right: 16px; background: #3b1d1d; border: 1px solid #6b2a2a; padding: 8px 12px; border-radius: 6px; }
+      .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); max-width: 90vw; text-align: center; background: #3b1d1d; border: 1px solid #6b2a2a; padding: 8px 12px; border-radius: 6px; z-index: 10; box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
       .linkbox { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
       .link-input { width: 280px; background: #11141d; color: #e7e7ea; border: 1px solid #2c3146; border-radius: 6px; padding: 6px 8px; }
       .conn-chip { padding: 4px 10px; border-radius: 999px; font-size: 13px; border: 1px solid #2c3146; white-space: nowrap; }

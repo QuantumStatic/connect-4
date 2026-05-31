@@ -4,7 +4,7 @@ compatibility_date = "2024-09-23"
 
 [[kv_namespaces]]
 binding = "ROOMS"
-id = "PLACEHOLDER_RUN_WRANGLER_KV_NAMESPACE_CREATE"
+id = "24380a2e1ab646bca8174e5e8ab22237"
 
 # TURN: set via `wrangler secret put TURN_KEY_ID` and `TURN_KEY_API_TOKEN`.
 # STUN needs no secret.

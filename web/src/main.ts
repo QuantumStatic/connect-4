@@ -12,6 +12,7 @@ import { getIceConfig, deleteRoom } from "./net/signal";
 import { hashLog, validateIncoming, mergeScores, decideSync, type WireMsg, type Score } from "./game/protocol";
 
 const GOOD_DEPTH = 10;
+const HEARTBEAT_MS = 15_000;
 
 class Game {
   state = new GameState();
@@ -36,6 +37,10 @@ class Game {
   // Monotonic game counter. Bumped on every New Game so a reset (a shorter/empty
   // log at a HIGHER gen) wins over an older, longer game during resync.
   private gen = 0;
+  // Periodic drift detector: every HEARTBEAT_MS we send a (gen, log-hash) ping;
+  // if the peer's differs from ours it triggers a full sync. Backstop for any
+  // move/newgame that was lost across a reconnect.
+  private heartbeat: number | null = null;
 
   constructor(public scene: Scene, public hud: Hud, public sfx: Sfx) {}
 
@@ -109,9 +114,20 @@ class Game {
     void this.pump();
   }
 
+  /** Start the periodic drift check. Every HEARTBEAT_MS we ping the peer with our
+   *  (gen, log-hash); a mismatch on their side triggers a full sync. This is the
+   *  backstop for a move or new-game that was lost across a reconnect. */
+  private startHeartbeat(): void {
+    if (this.heartbeat !== null) clearInterval(this.heartbeat);
+    this.heartbeat = window.setInterval(() => {
+      this.session?.send({ type: "ping", gen: this.gen, hash: hashLog(this.state.moves) });
+    }, HEARTBEAT_MS);
+  }
+
   /** Tear down the friend session + UI. `notify` sends a "bye" so the peer knows
    *  it was intentional (and won't try to reconnect), and frees the relay room. */
   private teardownFriend(notify: boolean): void {
+    if (this.heartbeat !== null) { clearInterval(this.heartbeat); this.heartbeat = null; }
     if (this.session) {
       if (notify) this.session.send({ type: "bye" });
       this.session.close();
@@ -337,6 +353,7 @@ class Game {
     this.hud.showEndRoom(true);
     this.updateStatus();
     this.hud.showConnState("connecting");
+    this.startHeartbeat();
 
     let ice: RTCIceServer[];
     try { ice = await getIceConfig(); }
@@ -419,6 +436,13 @@ class Game {
       this.hud.setModeValue("2P");
       this.hud.toast("Your opponent left the room. Switched to local play.", 6000);
       save(this.state, this.mode, this.localSide);
+      return;
+    }
+    if (m.type === "ping") {
+      // Drift check: if the peer's (gen, hash) differs from ours, send our full
+      // state so decideSync reconciles. Whichever side is ahead wins; if we're
+      // behind, the peer will push back on receiving our sync.
+      if (m.gen !== this.gen || m.hash !== hashLog(this.state.moves)) this.sendSync();
       return;
     }
     if (m.type === "newgame") {

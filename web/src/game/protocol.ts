@@ -20,6 +20,7 @@ export type WireMsg =
   | { type: "move"; delta: MoveDelta }
   | { type: "sync"; gen: number; log: string; score?: Score }
   | { type: "newgame"; gen: number }
+  | { type: "ping"; gen: number; hash: string } // periodic drift check (gen + log hash)
   | { type: "bye" }; // peer is intentionally leaving — don't try to reconnect
 
 /** Element-wise max of two scores. Idempotent reconciliation for `sync`. */

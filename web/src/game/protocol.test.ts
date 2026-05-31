@@ -92,6 +92,13 @@ describe("WireMsg union", () => {
     const m: WireMsg = { type: "bye" };
     expect(m.type).toBe("bye");
   });
+  it("accepts a ping variant carrying gen + hash", () => {
+    const m: WireMsg = { type: "ping", gen: 2, hash: hashLog("334") };
+    if (m.type === "ping") {
+      expect(m.gen).toBe(2);
+      expect(m.hash).toBe(hashLog("334"));
+    }
+  });
 });
 
 describe("decideSync", () => {

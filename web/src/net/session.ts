@@ -29,6 +29,7 @@ export class Session {
   private msgFn: (m: WireMsg) => void = () => {};
   private stateFn: (s: ConnState) => void = () => {};
   private reconnecting = false;
+  private closed = false;
 
   constructor(opts: SessionOpts) {
     this.peer = opts.peer;
@@ -87,6 +88,7 @@ export class Session {
   }
 
   private handleState(s: ConnState): void {
+    if (this.closed) return; // intentional teardown — swallow late peer events
     this.stateFn(s);
     if (s === "reconnecting" && !this.reconnecting) void this.reconnect();
   }
@@ -95,7 +97,7 @@ export class Session {
   private async reconnect(): Promise<void> {
     this.reconnecting = true;
     try {
-      for (let attempt = 0; attempt < MAX_RECONNECT; attempt++) {
+      for (let attempt = 0; attempt < MAX_RECONNECT && !this.closed; attempt++) {
         try {
           if (this.role === "host") {
             const offer = await this.peer.restart();
@@ -116,7 +118,7 @@ export class Session {
           await sleep(POLL_MS * (attempt + 1));
         }
       }
-      this.stateFn("disconnected");
+      if (!this.closed) this.stateFn("disconnected");
     } finally {
       this.reconnecting = false;
     }
@@ -130,7 +132,7 @@ export class Session {
     }
   }
 
-  close(): void { this.peer.close(); }
+  close(): void { this.closed = true; this.peer.close(); }
 }
 
 function sleep(ms: number): Promise<void> {

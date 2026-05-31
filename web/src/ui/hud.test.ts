@@ -8,7 +8,7 @@ import { Hud } from "./hud";
 
 function makeHud(): { hud: Hud; root: HTMLElement } {
   const root = document.createElement("div");
-  const hud = new Hud(root, { onModeChange: () => {}, onNewGame: () => {}, onHint: () => {} }, "2P");
+  const hud = new Hud(root, { onModeChange: () => {}, onNewGame: () => {}, onHint: () => {}, onEndRoom: () => {} }, "2P");
   return { hud, root };
 }
 
@@ -69,5 +69,25 @@ describe("Hud.showScore", () => {
     hud.showScore(null);
     const chip = root.querySelector(".score-chip") as HTMLElement;
     expect(chip.style.display).toBe("none");
+  });
+});
+
+describe("Hud end-room button", () => {
+  it("is hidden by default and fires onEndRoom when clicked while shown", () => {
+    let ended = 0;
+    const root = document.createElement("div");
+    const hud = new Hud(
+      root,
+      { onModeChange: () => {}, onNewGame: () => {}, onHint: () => {}, onEndRoom: () => { ended++; } },
+      "2P",
+    );
+    const btn = root.querySelector(".end-room") as HTMLButtonElement;
+    expect(btn.style.display).toBe("none");
+    hud.showEndRoom(true);
+    expect(btn.style.display).not.toBe("none");
+    btn.click();
+    expect(ended).toBe(1);
+    hud.showEndRoom(false);
+    expect(btn.style.display).toBe("none");
   });
 });

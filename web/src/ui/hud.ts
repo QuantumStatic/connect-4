@@ -5,6 +5,7 @@ export interface HudCallbacks {
   onModeChange: (mode: Mode) => void;
   onNewGame: () => void;
   onHint: () => void;
+  onEndRoom: () => void;
 }
 
 export class Hud {
@@ -12,6 +13,7 @@ export class Hud {
   private modeSel = document.createElement("select");
   private newBtn = document.createElement("button");
   private hintBtn = document.createElement("button");
+  private endBtn = document.createElement("button");
   private dot = document.createElement("span");
   private statusText = document.createElement("span");
   private thinking = false;
@@ -40,7 +42,11 @@ export class Hud {
     this.newBtn.onclick = () => cbs.onNewGame();
     this.hintBtn.textContent = "Hint";
     this.hintBtn.onclick = () => cbs.onHint();
-    root.append(this.modeSel, this.newBtn, this.hintBtn, this.statusEl);
+    this.endBtn.textContent = "End room";
+    this.endBtn.className = "end-room";
+    this.endBtn.style.display = "none";
+    this.endBtn.onclick = () => cbs.onEndRoom();
+    root.append(this.modeSel, this.newBtn, this.hintBtn, this.endBtn, this.statusEl);
     this.linkBox.className = "linkbox";
     this.linkBox.style.display = "none";
     this.connChip.className = "conn-chip";
@@ -103,6 +109,15 @@ export class Hud {
   }
 
   hideHostLink(): void { this.linkBox.style.display = "none"; }
+
+  /** Show/hide the "End room" button (friend mode only). */
+  showEndRoom(show: boolean): void {
+    this.endBtn.style.display = show ? "" : "none";
+  }
+
+  /** Reflect the current mode in the dropdown without firing onModeChange
+   *  (used when mode changes programmatically, e.g. after ending a room). */
+  setModeValue(mode: Mode): void { this.modeSel.value = mode; }
 
   /** Tell the player which color they're playing in friend mode.
    *  Pass null to hide the chip (when leaving friend mode). */

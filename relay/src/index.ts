@@ -1,6 +1,6 @@
 // relay/src/index.ts
 // Stateless signaling relay. Stores only opaque SDP in KV; never game state.
-import { createRoom, getRoom, putOffer, putAnswer } from "./rooms";
+import { createRoom, getRoom, putOffer, putAnswer, deleteRoom } from "./rooms";
 import { corsHeaders } from "./cors";
 
 interface Env {
@@ -83,6 +83,12 @@ export default {
         const room = await getRoom(env.ROOMS, id);
         if (!room) return empty(404, req, env);
         return json({ offer: room.offerSdp, epoch: room.offerEpoch }, 200, req, env);
+      }
+
+      // DELETE /room/:id -> 204 (explicit teardown; idempotent)
+      if (req.method === "DELETE" && !sub) {
+        await deleteRoom(env.ROOMS, id);
+        return empty(204, req, env);
       }
 
       // POST /room/:id/answer { answer, epoch }

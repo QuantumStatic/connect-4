@@ -51,3 +51,9 @@ export async function pollOffer(id: string, sinceEpoch: number): Promise<{ offer
   if (!res.ok) throw new Error(`pollOffer ${res.status}`);
   return await res.json();
 }
+
+/** Best-effort room teardown so we don't leave an orphan in KV (it would expire
+ *  on its own, but this frees it immediately). Never throws — fire and forget. */
+export async function deleteRoom(id: string): Promise<void> {
+  try { await fetch(u(`/room/${id}`), { method: "DELETE" }); } catch { /* ignore */ }
+}

@@ -66,6 +66,17 @@ describe("relay router", () => {
     const huge = "x".repeat(200_000);
     expect((await call("POST", "/room", { offer: huge })).status).toBe(413);
   });
+
+  it("DELETE /room/:id removes the room (subsequent GET is 404)", async () => {
+    const { id } = await (await call("POST", "/room", { offer: "O" })).json();
+    expect((await call("GET", `/room/${id}`)).status).toBe(200);
+    expect((await call("DELETE", `/room/${id}`)).status).toBe(204);
+    expect((await call("GET", `/room/${id}`)).status).toBe(404);
+  });
+
+  it("DELETE is idempotent — deleting a missing room still returns 204", async () => {
+    expect((await call("DELETE", "/room/does-not-exist")).status).toBe(204);
+  });
 });
 
 describe("GET /ice TURN branch", () => {

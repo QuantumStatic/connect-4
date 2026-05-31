@@ -19,7 +19,8 @@ export interface Score {
 export type WireMsg =
   | { type: "move"; delta: MoveDelta }
   | { type: "sync"; gen: number; log: string; score?: Score }
-  | { type: "newgame"; gen: number };
+  | { type: "newgame"; gen: number }
+  | { type: "bye" }; // peer is intentionally leaving — don't try to reconnect
 
 /** Element-wise max of two scores. Idempotent reconciliation for `sync`. */
 export function mergeScores(a: Score, b: Score): Score {

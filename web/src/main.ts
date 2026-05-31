@@ -8,7 +8,7 @@ import { Scene } from "./render/scene";
 import { Hud } from "./ui/hud";
 import { Session } from "./net/session";
 import { RtcPeer } from "./net/peer";
-import { getIceConfig } from "./net/signal";
+import { getIceConfig, deleteRoom } from "./net/signal";
 import { hashLog, validateIncoming, mergeScores, decideSync, type WireMsg, type Score } from "./game/protocol";
 
 const GOOD_DEPTH = 10;
@@ -100,13 +100,40 @@ class Game {
   }
 
   setMode(mode: Mode): void {
+    // Leaving a friend game (picking another mode) cleanly ends the room.
+    if (this.mode === "friend" && mode !== "friend") this.teardownFriend(true);
     this.mode = mode;
     if (mode === "friend") { void this.startFriend(); return; }
     this.localSide = mode === "2P" ? null : "yellow";
-    this.session?.close(); this.session = null; this.remoteSide = null;
-    this.hud.showConnState(null); this.hud.hideHostLink(); this.hud.showLocalSide(null); this.hud.showScore(null);
     save(this.state, this.mode, this.localSide);
     void this.pump();
+  }
+
+  /** Tear down the friend session + UI. `notify` sends a "bye" so the peer knows
+   *  it was intentional (and won't try to reconnect), and frees the relay room. */
+  private teardownFriend(notify: boolean): void {
+    if (this.session) {
+      if (notify) this.session.send({ type: "bye" });
+      this.session.close();
+      this.session = null;
+    }
+    if (this.roomId) { void deleteRoom(this.roomId); this.roomId = ""; }
+    this.remoteSide = null;
+    this.hud.showConnState(null);
+    this.hud.hideHostLink();
+    this.hud.showLocalSide(null);
+    this.hud.showScore(null);
+    this.hud.showEndRoom(false);
+  }
+
+  /** "End room" button: leave the room, notify the peer, return to local play. */
+  endRoom(): void {
+    this.teardownFriend(true);
+    this.mode = "2P";
+    this.localSide = null;
+    this.hud.setModeValue("2P");
+    this.hud.toast("Room closed.");
+    save(this.state, this.mode, this.localSide);
   }
 
   newGame(): void {
@@ -253,6 +280,13 @@ class Game {
   private async animateAndApply(col: number): Promise<void> {
     const settledHeight = this.state.heightOf(col);
     const player = this.state.toMove;
+    // Send our move to the peer BEFORE the drop animation. The delta is computed
+    // from the post-move log without mutating state yet, so the opponent starts
+    // their chip falling while ours is still in flight — feels noticeably snappier.
+    if (this.mode === "friend" && this.session && player === this.localSide) {
+      const ply = this.state.moves.length; // 0-based index this move will occupy
+      this.session.send({ type: "move", delta: { ply, col, hash: hashLog(this.state.moves + String(col)) } });
+    }
     await this.sfx.ensureLoaded();
     const floorY = this.scene.floorYFor(col, settledHeight);
     const sim = new ChipSim({ floorY, startY: this.scene.startYAbove(), gravity: 2400, restitution: 0.32 });
@@ -267,13 +301,6 @@ class Game {
     if (this.state.status === "won") this.sfx.win();
     this.persist();
     this.updateStatus();
-    if (this.mode === "friend" && this.session && player === this.localSide) {
-      const ply = this.state.moves.length - 1;
-      this.session.send({
-        type: "move",
-        delta: { ply, col, hash: hashLog(this.state.moves) },
-      });
-    }
   }
 
   async startFriend(): Promise<void> {
@@ -307,6 +334,7 @@ class Game {
     this.scene.syncFromState(this.state);
     this.hud.showLocalSide(this.localSide);
     this.hud.showScore(this.score, this.localSide);
+    this.hud.showEndRoom(true);
     this.updateStatus();
     this.hud.showConnState("connecting");
 
@@ -374,6 +402,7 @@ class Game {
     this.hud.showConnState("disconnected");
     this.hud.hideHostLink();
     this.hud.showLocalSide(null);
+    this.hud.showEndRoom(false);
     if (role === "guest") {
       this.hud.toast("Couldn't reach your friend — they may have closed the tab. Ask for a fresh link.", 6500);
     } else {
@@ -382,6 +411,16 @@ class Game {
   }
 
   private onWire(m: WireMsg): void {
+    if (m.type === "bye") {
+      // Peer left intentionally — tear down without echoing a bye, drop to local.
+      this.teardownFriend(false);
+      this.mode = "2P";
+      this.localSide = null;
+      this.hud.setModeValue("2P");
+      this.hud.toast("Your opponent left the room. Switched to local play.", 6000);
+      save(this.state, this.mode, this.localSide);
+      return;
+    }
     if (m.type === "newgame") {
       // Peer hit New Game. Adopt only if it's a newer generation (ignore stale).
       if ((m.gen ?? 0) > this.gen) {
@@ -456,6 +495,7 @@ async function main() {
     onModeChange: (m) => game.setMode(m),
     onNewGame: () => game.newGame(),
     onHint: () => void game.hint(),
+    onEndRoom: () => game.endRoom(),
   }, "2P");
   const game = new Game(scene, hud, sfx);
   // In hosted/production builds there's no local Python solver running on

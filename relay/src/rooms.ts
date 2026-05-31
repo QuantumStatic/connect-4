@@ -11,7 +11,7 @@ export interface Room {
   createdAt: number;
 }
 
-const TTL_SECONDS = 2 * 60 * 60; // 2h, refreshed on each write
+const TTL_SECONDS = 60 * 60; // 1h, refreshed on each write
 
 function randomId(): string {
   // 128 bits → base62-ish via hex grouping; unguessable.
@@ -59,4 +59,8 @@ export async function putAnswer(kv: KVNamespace, id: string, answerSdp: string, 
   room.answerEpoch = epoch;
   await write(kv, id, room);
   return true;
+}
+
+export async function deleteRoom(kv: KVNamespace, id: string): Promise<void> {
+  await kv.delete(`room:${id}`);
 }

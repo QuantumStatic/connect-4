@@ -88,6 +88,10 @@ describe("WireMsg union", () => {
     const m: WireMsg = { type: "sync", gen: 1, log: "33", score: { yellow: 2, green: 1 } };
     if (m.type === "sync") expect(m.score).toEqual({ yellow: 2, green: 1 });
   });
+  it("accepts a bye variant", () => {
+    const m: WireMsg = { type: "bye" };
+    expect(m.type).toBe("bye");
+  });
 });
 
 describe("decideSync", () => {

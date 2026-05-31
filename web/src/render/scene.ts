@@ -16,6 +16,25 @@ const BOARD_H = ROWS * CELL + PAD * 2;
 const TOP_GUTTER = 80;
 const CHIP_R = CELL * 0.42;
 
+/** Map a canvas-relative X coordinate to a board column, or null if the click
+ *  landed in the padding/outside the board. Exported so it's testable without
+ *  Pixi or a DOM. The canvas may be CSS-scaled on small screens, so callers
+ *  pass both the displayed width and the native board width. */
+export function columnFromX(
+  canvasX: number,
+  canvasWidth: number,
+  boardWidth: number,
+  padding: number,
+  cellWidth: number,
+  columns: number,
+): number | null {
+  const scaleX = boardWidth / canvasWidth;
+  const x = canvasX * scaleX;
+  if (x < padding || x > boardWidth - padding) return null;
+  const col = Math.floor((x - padding) / cellWidth);
+  return col >= 0 && col < columns ? col : null;
+}
+
 const BOARD_RED = 0x6b1a1a;
 const SLOT_DARK = 0x0f1115;
 const YELLOW = 0xe6c437;
@@ -94,12 +113,8 @@ export class Scene {
     this.app.canvas.style.touchAction = "manipulation";
     const colFromEvent = (ev: PointerEvent): number | null => {
       const rect = this.app.canvas.getBoundingClientRect();
-      // Canvas is CSS-scaled on small screens — map back into BOARD_W space.
-      const scaleX = BOARD_W / rect.width;
-      const x = (ev.clientX - rect.left) * scaleX;
-      if (x < PAD || x > BOARD_W - PAD) return null;
-      const col = Math.floor((x - PAD) / CELL);
-      return col >= 0 && col < COLS ? col : null;
+      // Canvas is CSS-scaled on small screens — columnFromX maps back into BOARD_W space.
+      return columnFromX(ev.clientX - rect.left, rect.width, BOARD_W, PAD, CELL, COLS);
     };
     this.app.canvas.addEventListener("pointermove", (ev: PointerEvent) => this.setHover(colFromEvent(ev)));
     this.app.canvas.addEventListener("pointerleave", () => this.setHover(null));

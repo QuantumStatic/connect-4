@@ -228,19 +228,57 @@ class Game {
 
     const peer = new RtcPeer(ice, role);
     this.session = new Session({ peer, role });
+    // 30s wall-clock cap on the initial handshake. Common failure mode: the
+    // host closed their tab before the guest opened the link — the guest
+    // would otherwise spin forever polling for an answer no one will read.
+    let connected = false;
+    const handshakeTimeout = window.setTimeout(() => {
+      if (!connected) this.handshakeFailed(role);
+    }, 30_000);
     this.session.onState((s) => {
       this.hud.showConnState(s);
-      if (s === "connected") this.session?.send({ type: "sync", log: this.state.moves });
+      if (s === "connected") {
+        connected = true;
+        window.clearTimeout(handshakeTimeout);
+        this.session?.send({ type: "sync", log: this.state.moves });
+      } else if (s === "disconnected" && !connected) {
+        window.clearTimeout(handshakeTimeout);
+        this.handshakeFailed(role);
+      }
     });
     this.session.onMessage((m) => this.onWire(m));
 
-    if (role === "host") {
-      this.roomId = await this.session.host();
-      const url = `${location.origin}${location.pathname}#join=${this.roomId}`;
-      this.hud.showHostLink(url);
+    try {
+      if (role === "host") {
+        this.roomId = await this.session.host();
+        const url = `${location.origin}${location.pathname}#join=${this.roomId}`;
+        this.hud.showHostLink(url);
+      } else {
+        this.roomId = joinId!;
+        await this.session.join(joinId!);
+      }
+    } catch (e) {
+      window.clearTimeout(handshakeTimeout);
+      this.handshakeFailed(role, e);
+    }
+  }
+
+  /** Surface a friendly error when the initial WebRTC handshake fails (timeout,
+   *  bad room id, host went away, relay 4xx, etc.). Tears the session down so
+   *  the user can pick a different mode without leaking state. */
+  private handshakeFailed(role: "host" | "guest", error?: unknown): void {
+    if (!this.session) return; // already torn down
+    console.warn("P2P handshake failed", { role, error });
+    this.session.close();
+    this.session = null;
+    this.remoteSide = null;
+    this.hud.showConnState("disconnected");
+    this.hud.hideHostLink();
+    this.hud.showLocalSide(null);
+    if (role === "guest") {
+      this.hud.toast("Couldn't reach your friend — they may have closed the tab. Ask for a fresh link.", 6500);
     } else {
-      this.roomId = joinId!;
-      await this.session.join(joinId!);
+      this.hud.toast("Couldn't open a room — check your connection and try again.", 6500);
     }
   }
 

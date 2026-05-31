@@ -13,10 +13,11 @@ export interface SavedGame {
   humanSide: "yellow" | "green" | null; // localSide in vs-AI / friend; null in 2P
   roomId?: string; // present in friend mode
   score?: Score; // running room-wide tally (friend mode)
+  gen?: number; // monotonic game counter (friend mode) for reset-aware resync
   ts: number;
 }
 
-// v3: added "friend" mode + roomId. score is optional + back-compat (no key bump).
+// v3: added "friend" mode + roomId. score/gen are optional + back-compat (no key bump).
 const KEY = "connect4:save:v3";
 
 export function save(
@@ -25,8 +26,9 @@ export function save(
   humanSide: SavedGame["humanSide"],
   roomId?: string,
   score?: Score,
+  gen?: number,
 ): void {
-  const data: SavedGame = { moves: g.moves, mode, humanSide, roomId, score, ts: Date.now() };
+  const data: SavedGame = { moves: g.moves, mode, humanSide, roomId, score, gen, ts: Date.now() };
   try { localStorage.setItem(KEY, JSON.stringify(data)); } catch { /* quota — ignore */ }
 }
 

@@ -18,12 +18,43 @@ export interface Score {
 
 export type WireMsg =
   | { type: "move"; delta: MoveDelta }
-  | { type: "sync"; log: string; score?: Score }
-  | { type: "newgame" };
+  | { type: "sync"; gen: number; log: string; score?: Score }
+  | { type: "newgame"; gen: number };
 
 /** Element-wise max of two scores. Idempotent reconciliation for `sync`. */
 export function mergeScores(a: Score, b: Score): Score {
   return { yellow: Math.max(a.yellow, b.yellow), green: Math.max(a.green, b.green) };
+}
+
+/** What to do when a `sync` arrives, given local vs remote (generation, log).
+ *  `gen` is a monotonic game counter bumped on every New Game — it lets a reset
+ *  (shorter/empty log at a HIGHER gen) win over an older, longer game, which
+ *  plain longest-prefix reconciliation cannot express.
+ *
+ *  - "adopt": take the remote game wholesale (it's newer or further along)
+ *  - "push":  we're ahead — re-send our state so the peer catches up
+ *  - "noop":  already in agreement
+ *  - "conflict": same gen but logs diverged (impossible without a bug/tamper) */
+export type SyncDecision =
+  | { action: "adopt"; gen: number; log: string }
+  | { action: "push" }
+  | { action: "noop" }
+  | { action: "conflict" };
+
+export function decideSync(
+  localGen: number,
+  localLog: string,
+  remoteGen: number,
+  remoteLog: string,
+): SyncDecision {
+  if (remoteGen > localGen) return { action: "adopt", gen: remoteGen, log: remoteLog };
+  if (remoteGen < localGen) return { action: "push" };
+  // Same generation → reconcile by move-log prefix.
+  const agreed = reconcileLogs(localLog, remoteLog);
+  if (agreed === "conflict") return { action: "conflict" };
+  if (agreed === localLog && agreed === remoteLog) return { action: "noop" };
+  if (agreed === remoteLog) return { action: "adopt", gen: localGen, log: remoteLog };
+  return { action: "push" }; // our log is the longer one
 }
 
 /** FNV-1a (32-bit) over the canonical move-log string. Deterministic, fast,

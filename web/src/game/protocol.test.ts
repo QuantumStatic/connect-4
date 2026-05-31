@@ -1,7 +1,7 @@
 // web/src/game/protocol.test.ts
 import { describe, expect, it } from "vitest";
 import { GameState } from "./state";
-import { hashLog, makeDelta, validateIncoming, reconcileLogs, mergeScores, type WireMsg } from "./protocol";
+import { hashLog, makeDelta, validateIncoming, reconcileLogs, mergeScores, decideSync, type WireMsg } from "./protocol";
 
 describe("hashLog", () => {
   it("is deterministic and order-sensitive", () => {
@@ -74,18 +74,41 @@ describe("validateIncoming", () => {
 });
 
 describe("WireMsg union", () => {
-  it("accepts a newgame variant", () => {
-    const m: WireMsg = { type: "newgame" };
+  it("accepts a newgame variant carrying a generation", () => {
+    const m: WireMsg = { type: "newgame", gen: 3 };
     expect(m.type).toBe("newgame");
+    if (m.type === "newgame") expect(m.gen).toBe(3);
   });
-  it("accepts a sync variant with a log", () => {
-    const m: WireMsg = { type: "sync", log: "334" };
+  it("accepts a sync variant with gen + log", () => {
+    const m: WireMsg = { type: "sync", gen: 0, log: "334" };
     expect(m.type).toBe("sync");
     if (m.type === "sync") expect(m.log).toBe("334");
   });
   it("accepts a sync variant carrying a score", () => {
-    const m: WireMsg = { type: "sync", log: "33", score: { yellow: 2, green: 1 } };
+    const m: WireMsg = { type: "sync", gen: 1, log: "33", score: { yellow: 2, green: 1 } };
     if (m.type === "sync") expect(m.score).toEqual({ yellow: 2, green: 1 });
+  });
+});
+
+describe("decideSync", () => {
+  it("adopts the remote game when its generation is higher (new game wins)", () => {
+    // Local is mid-game at gen 0; remote reset to an empty board at gen 1.
+    expect(decideSync(0, "334", 1, "")).toEqual({ action: "adopt", gen: 1, log: "" });
+  });
+  it("pushes our state when our generation is higher", () => {
+    expect(decideSync(2, "", 1, "3342")).toEqual({ action: "push" });
+  });
+  it("adopts the longer log at the same generation", () => {
+    expect(decideSync(0, "33", 0, "3342")).toEqual({ action: "adopt", gen: 0, log: "3342" });
+  });
+  it("pushes when our log is the longer one at the same generation", () => {
+    expect(decideSync(0, "3342", 0, "33")).toEqual({ action: "push" });
+  });
+  it("no-ops when both sides already agree", () => {
+    expect(decideSync(1, "3342", 1, "3342")).toEqual({ action: "noop" });
+  });
+  it("flags a conflict when same-gen logs diverge", () => {
+    expect(decideSync(0, "334", 0, "335")).toEqual({ action: "conflict" });
   });
 });
 

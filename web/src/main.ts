@@ -9,7 +9,7 @@ import { Hud } from "./ui/hud";
 import { Session } from "./net/session";
 import { RtcPeer } from "./net/peer";
 import { getIceConfig } from "./net/signal";
-import { hashLog, validateIncoming, reconcileLogs, mergeScores, type WireMsg, type Score } from "./game/protocol";
+import { hashLog, validateIncoming, mergeScores, decideSync, type WireMsg, type Score } from "./game/protocol";
 
 const GOOD_DEPTH = 10;
 
@@ -33,6 +33,9 @@ class Game {
   // element-wise max. `gameScored` makes the per-game increment idempotent.
   private score: Score = { yellow: 0, green: 0 };
   private gameScored = false;
+  // Monotonic game counter. Bumped on every New Game so a reset (a shorter/empty
+  // log at a HIGHER gen) wins over an older, longer game during resync.
+  private gen = 0;
 
   constructor(public scene: Scene, public hud: Hud, public sfx: Sfx) {}
 
@@ -43,6 +46,7 @@ class Game {
       this.mode = saved.mode;
       this.localSide = saved.humanSide;
       if (saved.score) this.score = saved.score;
+      this.gen = saved.gen ?? 0;
       this.gameScored = this.state.status === "won"; // already tallied if finished
     } else {
       clear();
@@ -59,16 +63,40 @@ class Game {
     if (this.state.status === "won" && this.state.winner && !this.gameScored) {
       this.gameScored = true;
       this.score[this.state.winner] += 1;
-      this.persistScore();
+      this.persist();
     }
-    if (this.state.status === "won") this.hud.setStatus(`${this.state.winner} wins`);
-    else if (this.state.status === "draw") this.hud.setStatus("draw");
-    else this.hud.setStatus(`${this.state.toMove} to move`);
+    this.hud.setStatus(this.statusText());
     if (this.mode === "friend") this.hud.showScore(this.score, this.localSide);
   }
 
-  private persistScore(): void {
-    save(this.state, this.mode, this.localSide, this.mode === "friend" ? this.roomId : undefined, this.score);
+  /** Human-readable status line. In friend mode it's framed from the local
+   *  player's seat ("Your turn" / "Opponent's turn", "You win!" / "Opponent
+   *  wins"); otherwise it names the color to move. */
+  private statusText(): string {
+    const s = this.state;
+    if (this.mode === "friend" && this.localSide) {
+      if (s.status === "won") return s.winner === this.localSide ? "You win! 🎉" : "Opponent wins";
+      if (s.status === "draw") return "Draw";
+      return s.toMove === this.localSide ? "Your turn" : "Opponent's turn";
+    }
+    if (s.status === "won") return `${s.winner} wins`;
+    if (s.status === "draw") return "draw";
+    return `${s.toMove} to move`;
+  }
+
+  /** Single persistence chokepoint — always writes moves + roomId + score + gen. */
+  private persist(): void {
+    save(
+      this.state, this.mode, this.localSide,
+      this.mode === "friend" ? this.roomId : undefined,
+      this.score, this.gen,
+    );
+  }
+
+  /** Send our full game state to the peer (generation + log + score). Used on
+   *  connect/reconnect and whenever we detect we're ahead of the peer. */
+  private sendSync(): void {
+    this.session?.send({ type: "sync", gen: this.gen, log: this.state.moves, score: this.score });
   }
 
   setMode(mode: Mode): void {
@@ -85,23 +113,37 @@ class Game {
     // Ignore while a chip is mid-drop — otherwise the in-flight animation
     // would resolve onto a fresh state and plant a phantom chip.
     if (this.busy) return;
-    this.resetBoard();
-    // In friend mode, tell the other side to reset too. Without this, the
-    // remote keeps the finished board and the two go out of sync.
-    if (this.mode === "friend" && this.session) this.session.send({ type: "newgame" });
+    this.startFreshGame(this.gen + 1); // bump generation so the reset wins on resync
+    // Tell the peer to reset too, carrying the new generation. Without this the
+    // remote keeps the finished board until the next reconnect/sync.
+    if (this.mode === "friend" && this.session) this.session.send({ type: "newgame", gen: this.gen });
   }
 
-  /** Reset to a fresh board locally — used by both New Game (initiator) and
-   *  by an incoming "newgame" message from the peer (no echo to avoid loops). */
-  private resetBoard(): void {
+  /** Reset to a fresh board at generation `gen`. Used by New Game (gen+1) and by
+   *  an incoming "newgame"/"sync" from the peer (adopting their gen). The running
+   *  score is preserved across games. */
+  private startFreshGame(gen: number): void {
+    this.gen = gen;
     this.state = new GameState();
     this.pendingCol = null;
-    this.gameScored = false; // new game — but the running score is preserved
+    this.gameScored = false;
     this.scene.setQueuedChip(null);
     this.scene.syncFromState(this.state);
-    save(this.state, this.mode, this.localSide, this.mode === "friend" ? this.roomId : undefined, this.score);
+    this.persist();
     this.updateStatus();
     void this.pump();
+  }
+
+  /** Replace the board with `log` at generation `gen` (adopting a peer's state). */
+  private adoptState(gen: number, log: string): void {
+    this.gen = gen;
+    this.state = GameState.fromSequence(log);
+    this.pendingCol = null;
+    this.gameScored = this.state.status === "won"; // already reflected in merged score
+    this.scene.setQueuedChip(null);
+    this.scene.syncFromState(this.state);
+    this.persist();
+    this.updateStatus();
   }
 
   async hint(): Promise<void> {
@@ -223,7 +265,7 @@ class Game {
     this.state.applyMove(col);
     this.scene.syncFromState(this.state);
     if (this.state.status === "won") this.sfx.win();
-    save(this.state, this.mode, this.localSide, this.mode === "friend" ? this.roomId : undefined);
+    this.persist();
     this.updateStatus();
     if (this.mode === "friend" && this.session && player === this.localSide) {
       const ply = this.state.moves.length - 1;
@@ -241,19 +283,31 @@ class Game {
     // state says we were yellow + roomId matches), take back the host slot
     // instead of joining. This handles "closed my tab, clicked the link again".
     const saved = load();
-    const isRehost = !!joinId
-      && saved?.mode === "friend"
-      && saved.humanSide === "yellow"
-      && saved.roomId === joinId;
-    const role: "host" | "guest" = joinId && !isRehost ? "guest" : "host";
+    // "Resuming" = we have saved friend state for *this* room (reload / reconnect
+    // of an in-progress game). True for both the host reopening their own link
+    // and a guest refreshing the join link.
+    const resuming = !!joinId && saved?.mode === "friend" && saved.roomId === joinId;
+    const isRehost = resuming && saved!.humanSide === "yellow";
+    const role: "host" | "guest" = isRehost || !joinId ? "host" : "guest";
     this.localSide = role === "host" ? "yellow" : "green";
     this.remoteSide = role === "host" ? "green" : "yellow";
-    // Resume the tally only when re-hosting our own room; a brand-new room or a
-    // fresh guest starts at 0–0 (the guest then adopts the host's via sync).
-    this.score = isRehost && saved?.score ? saved.score : { yellow: 0, green: 0 };
+    // Restore the in-progress board + generation on reload; otherwise start clean
+    // (a fresh guest will adopt the host's state via the first sync).
+    if (resuming) {
+      this.state = GameState.fromSequence(saved!.moves);
+      this.gen = saved!.gen ?? 0;
+      this.score = saved!.score ?? { yellow: 0, green: 0 };
+    } else {
+      this.state = new GameState();
+      this.gen = 0;
+      this.score = { yellow: 0, green: 0 };
+    }
+    this.pendingCol = null;
     this.gameScored = this.state.status === "won";
+    this.scene.syncFromState(this.state);
     this.hud.showLocalSide(this.localSide);
     this.hud.showScore(this.score, this.localSide);
+    this.updateStatus();
     this.hud.showConnState("connecting");
 
     let ice: RTCIceServer[];
@@ -274,7 +328,7 @@ class Game {
       if (s === "connected") {
         connected = true;
         window.clearTimeout(handshakeTimeout);
-        this.session?.send({ type: "sync", log: this.state.moves, score: this.score });
+        this.sendSync(); // exchange full state (gen + log + score) on every (re)connect
       } else if (s === "disconnected" && !connected) {
         window.clearTimeout(handshakeTimeout);
         this.handshakeFailed(role);
@@ -329,9 +383,11 @@ class Game {
 
   private onWire(m: WireMsg): void {
     if (m.type === "newgame") {
-      // Peer hit "New game" — mirror locally without echoing back.
-      this.hud.toast("Your opponent started a new game.");
-      this.resetBoard();
+      // Peer hit New Game. Adopt only if it's a newer generation (ignore stale).
+      if ((m.gen ?? 0) > this.gen) {
+        this.hud.toast("Your opponent started a new game.");
+        this.startFreshGame(m.gen);
+      }
       return;
     }
     if (m.type === "sync") {
@@ -341,27 +397,31 @@ class Game {
         const merged = mergeScores(this.score, m.score);
         if (merged.yellow !== this.score.yellow || merged.green !== this.score.green) {
           this.score = merged;
-          this.persistScore();
+          this.persist();
           this.hud.showScore(this.score, this.localSide);
         }
       }
-      const agreed = reconcileLogs(this.state.moves, m.log);
-      if (agreed === "conflict") { this.hud.toast("Game out of sync — start a new game."); return; }
-      if (agreed !== this.state.moves) {
-        this.state = GameState.fromSequence(agreed);
-        this.scene.syncFromState(this.state);
-        // If we adopted a finished game, the sender already tallied it and sent
-        // it in m.score (merged above) — so suppress the local increment to
-        // avoid double-counting. (Only when the peer actually sent a score.)
-        if (this.state.status === "won" && m.score) this.gameScored = true;
-        this.updateStatus();
+      const remoteGen = m.gen ?? 0;
+      const decision = decideSync(this.gen, this.state.moves, remoteGen, m.log);
+      switch (decision.action) {
+        case "adopt":
+          this.adoptState(decision.gen, decision.log);
+          break;
+        case "push":
+          this.sendSync(); // we're ahead — push our full state so the peer catches up
+          break;
+        case "conflict":
+          this.hud.toast("Game out of sync — start a new game.");
+          break;
+        case "noop":
+          break;
       }
       return;
     }
     if (!this.remoteSide) return;
     const verdict = validateIncoming(this.state, m.delta, this.remoteSide);
     if (verdict === "ok") { this.pendingCol = m.delta.col; void this.pump(); }
-    else if (verdict === "desync") { this.session?.send({ type: "sync", log: this.state.moves }); }
+    else if (verdict === "desync" || verdict === "duplicate") { this.sendSync(); }
   }
 
   private handleOffline(reason: "runtime" | "no-local-solver" = "runtime"): void {

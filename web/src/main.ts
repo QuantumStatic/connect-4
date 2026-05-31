@@ -251,12 +251,23 @@ class Game {
     else if (verdict === "desync") { this.session?.send({ type: "sync", log: this.state.moves }); }
   }
 
-  private handleOffline(): void {
+  private handleOffline(reason: "runtime" | "no-local-solver" = "runtime"): void {
     if (!this.solverOnline) return; // idempotent — only act on the first failure
     this.solverOnline = false;
     this.hud.setSolverOffline(true);
-    this.hud.toast("Solver offline — AI/hint disabled. Hot-seat still works.");
+    if (reason === "no-local-solver") {
+      this.hud.toast(
+        "vs-AI modes need the local Python solver. Hot-seat and Play-a-friend work online — clone the repo to play vs CPU.",
+        6500,
+      );
+    } else {
+      this.hud.toast("Solver offline — AI/hint disabled. Hot-seat still works.");
+    }
   }
+
+  /** Hosted (Cloudflare Pages) builds have no local solver; flag it up-front so
+   *  Good/Great are disabled in the menu instead of failing on first move. */
+  markNoLocalSolver(): void { this.handleOffline("no-local-solver"); }
 }
 
 async function main() {
@@ -274,6 +285,11 @@ async function main() {
     onHint: () => void game.hint(),
   }, "2P");
   const game = new Game(scene, hud, sfx);
+  // In hosted/production builds there's no local Python solver running on
+  // 127.0.0.1:8000, so disable Good/Great up-front (with a friendly explainer)
+  // rather than letting the user pick a mode that will silently fail on first
+  // move. Hot-seat (2P) and Play-a-friend (P2P) still work fully.
+  if (import.meta.env.PROD) game.markNoLocalSolver();
   if (new URLSearchParams(location.hash.slice(1)).get("join")) {
     await game.startFriend();
   } else {

@@ -68,9 +68,17 @@ export class Hud {
     this.hintBtn.disabled = offline;
     if (offline) {
       for (const opt of Array.from(this.modeSel.options)) {
-        if (opt.value !== "2P") opt.disabled = true;
+        if (opt.value === "good" || opt.value === "great") {
+          opt.disabled = true;
+          if (!opt.textContent?.includes("(local only)")) opt.textContent = `${opt.textContent} (local only)`;
+        }
       }
-      if (this.modeSel.value !== "2P") { this.modeSel.value = "2P"; this.modeSel.dispatchEvent(new Event("change")); }
+      // Hint requires solver but isn't a mode — disable it explicitly.
+      // Friend mode stays available (it doesn't need the solver).
+      if (this.modeSel.value === "good" || this.modeSel.value === "great") {
+        this.modeSel.value = "2P";
+        this.modeSel.dispatchEvent(new Event("change"));
+      }
     }
   }
 

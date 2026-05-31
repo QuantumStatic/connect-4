@@ -272,6 +272,10 @@ class Game {
         this.roomId = joinId!;
         await this.session.join(joinId!);
       }
+      // Persist the role + roomId now (not after the first move) so reopening
+      // the link counts as a rehost even if the original tab was closed before
+      // any moves were played.
+      save(this.state, this.mode, this.localSide, this.roomId);
     } catch (e) {
       window.clearTimeout(handshakeTimeout);
       this.handshakeFailed(role, e);

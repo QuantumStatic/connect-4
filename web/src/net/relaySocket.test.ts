@@ -12,14 +12,15 @@ class FakeWS {
   url: string;
   onopen: (() => void) | null = null;
   onmessage: ((e: { data: string }) => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((e: CloseEvent) => void) | null = null;
   onerror: (() => void) | null = null;
   constructor(url: string) { this.url = url; FakeWS.sockets.push(this); }
   send(d: string) { this.sent.push(d); }
-  close() { this.readyState = FakeWS.CLOSED; this.onclose?.(); }
+  close() { this.readyState = FakeWS.CLOSED; this.onclose?.({ code: 1000 } as CloseEvent); }
   // helpers
   open() { this.readyState = FakeWS.OPEN; this.onopen?.(); }
   message(obj: unknown) { this.onmessage?.({ data: JSON.stringify(obj) }); }
+  closeWithCode(code: number) { this.readyState = FakeWS.CLOSED; this.onclose?.({ code } as CloseEvent); }
 }
 
 beforeEach(() => {
@@ -83,5 +84,20 @@ describe("RelaySocket", () => {
     latest().close();
     vi.advanceTimersByTime(5000);
     expect(FakeWS.sockets.length).toBe(n); // no new socket opened
+  });
+
+  it("fires onRoomFull and stops reconnecting on close code 4001", () => {
+    let roomFull = false;
+    const states: ConnState[] = [];
+    const rs = new RelaySocket("wss://relay/ws/room1");
+    rs.onState((s) => states.push(s));
+    rs.onRoomFull(() => { roomFull = true; });
+    latest().open();
+    latest().closeWithCode(4001);
+    expect(roomFull).toBe(true);
+    expect(states).toContain("disconnected");
+    // Should NOT reconnect
+    vi.advanceTimersByTime(5000);
+    expect(FakeWS.sockets.length).toBe(1);
   });
 });

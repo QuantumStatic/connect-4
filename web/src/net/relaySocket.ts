@@ -12,6 +12,7 @@ export class RelaySocket implements Transport {
   private ws: WebSocket | null = null;
   private msgFn: (m: WireMsg) => void = () => {};
   private stateFn: (s: ConnState) => void = () => {};
+  private fullFn: () => void = () => {};
   private closed = false;
   private backoff = BACKOFF_START_MS;
   private timer: number | null = null;
@@ -27,7 +28,15 @@ export class RelaySocket implements Transport {
     this.ws = ws;
     ws.onopen = () => { this.backoff = BACKOFF_START_MS; /* wait for welcome to mark connected */ };
     ws.onmessage = (e: MessageEvent) => this.handle(e.data as string);
-    ws.onclose = () => this.onDrop();
+    ws.onclose = (e: CloseEvent) => {
+      if (e.code === 4001) {
+        this.closed = true;
+        this.stateFn("disconnected");
+        this.fullFn();
+        return;
+      }
+      this.onDrop();
+    };
     ws.onerror = () => this.onDrop();
   }
 
@@ -67,6 +76,7 @@ export class RelaySocket implements Transport {
 
   onMessage(fn: (m: WireMsg) => void): void { this.msgFn = fn; }
   onState(fn: (s: ConnState) => void): void { this.stateFn = fn; }
+  onRoomFull(fn: () => void): void { this.fullFn = fn; }
 
   reconnectNow(): void {
     if (this.closed) return;

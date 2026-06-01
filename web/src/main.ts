@@ -400,6 +400,14 @@ class Game {
       // Color comes from the DO's welcome frame once connected.
       this.roomId = joinId ?? randomRoomId();
       const sock = new RelaySocket(`${relayWsBase()}/ws/${this.roomId}`);
+      sock.onRoomFull(() => {
+        this.hud.toast("This room already has two players.", 6000);
+        this.teardownFriend(false);
+        this.mode = "2P";
+        this.localSide = null;
+        this.hud.setModeValue("2P");
+        save(this.state, this.mode, this.localSide);
+      });
       this.session = sock;
       // Optimistic color assignment (matches DO's first=yellow rule).
       this.localSide = joinId ? "green" : "yellow";

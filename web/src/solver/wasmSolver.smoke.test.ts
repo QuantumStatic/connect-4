@@ -1,6 +1,5 @@
 // Loads the REAL wasm module (bookless paths only) and pins a few known results.
 import { describe, expect, it } from "vitest";
-// @ts-expect-error - JS module factory, types provided by pyconnect4.d.ts
 import createPyconnect4 from "./wasm/pyconnect4.js";
 
 describe("wasm module (real binary, bookless)", () => {

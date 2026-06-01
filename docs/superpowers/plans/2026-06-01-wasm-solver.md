@@ -313,7 +313,6 @@ Create `web/src/solver/wasmSolver.smoke.test.ts`:
 ```ts
 // Loads the REAL wasm module (bookless paths only) and pins a few known results.
 import { describe, expect, it } from "vitest";
-// @ts-expect-error - JS module factory, types provided by pyconnect4.d.ts
 import createPyconnect4 from "./wasm/pyconnect4.js";
 
 describe("wasm module (real binary, bookless)", () => {
@@ -552,12 +551,12 @@ Create `web/src/solver/client.test.ts`:
 ```ts
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const analyzeWasm = vi.fn();
+const { analyzeWasm } = vi.hoisted(() => ({ analyzeWasm: vi.fn() }));
 vi.mock("./wasmSolver", () => ({ analyzeWasm }));
 
 import { analyze, SolverOffline } from "./client";
 
-afterEach(() => vi.clearAllMocks());
+afterEach(() => { vi.clearAllMocks(); });
 
 describe("solver client (wasm-backed)", () => {
   it("forwards moves + depth and returns the result unchanged", async () => {

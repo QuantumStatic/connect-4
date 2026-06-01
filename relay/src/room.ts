@@ -30,11 +30,11 @@ export class RoomDO extends DurableObject {
     await this.load();
     const existing = this.sockets();
     if (existing.length >= 2) {
-      // Room full — use hibernation API so storage isolation stays clean,
-      // then immediately close with our app code so the client gets a clean signal.
+      // Room full — use plain accept (not hibernation API) to avoid persisting
+      // the closed socket in ctx.getWebSockets(), then immediately close.
       const pair = new WebSocketPair();
       const [client, server] = [pair[0], pair[1]];
-      this.ctx.acceptWebSocket(server);
+      server.accept();
       server.close(4001, "room full");
       return new Response(null, { status: 101, webSocket: client });
     }
@@ -71,13 +71,13 @@ export class RoomDO extends DurableObject {
     try { msg = JSON.parse(raw); } catch { return; }
 
     if (msg && msg.type === "sync" && typeof msg.log === "string") {
-      // Cache; element-wise-max the score so a stale sync can't lower it.
+      // Cache; element-wise-max the score and gen so a stale sync can't lower them.
       const prev = this.lastSync;
       const score = {
         yellow: Math.max(prev?.score.yellow ?? 0, msg.score?.yellow ?? 0),
         green: Math.max(prev?.score.green ?? 0, msg.score?.green ?? 0),
       };
-      this.lastSync = { gen: msg.gen ?? 0, log: msg.log, score };
+      this.lastSync = { gen: Math.max(prev?.gen ?? 0, msg.gen ?? 0), log: msg.log, score };
       await this.ctx.storage.put("lastSync", this.lastSync);
     }
 

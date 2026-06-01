@@ -1,11 +1,11 @@
 // web/src/main.ts
 import { GameState, type Cell } from "./game/state";
-import { load, save, clear, type Mode } from "./game/persist";
+import { load, save, clear, rememberHostRoom, forgetHostRoom, hostedRoom, type Mode } from "./game/persist";
 import { analyze, SolverOffline } from "./solver/client";
 import { ChipSim } from "./physics/chip";
 import { Sfx } from "./audio/sfx";
 import { Scene } from "./render/scene";
-import { Hud } from "./ui/hud";
+import { Hud, type SidePref } from "./ui/hud";
 import { Session } from "./net/session";
 import { RtcPeer } from "./net/peer";
 import { getIceConfig, deleteRoom, closeRelayRoom } from "./net/signal";
@@ -43,8 +43,16 @@ class Game {
   // if the peer's differs from ours it triggers a full sync. Backstop for any
   // move/newgame that was lost across a reconnect.
   private heartbeat: number | null = null;
+  // Whether the local player wants to move first (yellow) or second (green).
+  // Applies to vs-AI and to the friend-mode host. Yellow always moves first.
+  private sidePref: SidePref = "first";
+  // Friend mode: true once the opponent is known to be present, which locks the
+  // host's side picker (the guest already took their seat from the link).
+  private peerPresent = false;
 
   constructor(public scene: Scene, public hud: Hud, public sfx: Sfx) {}
+
+  private sideToColor(pref: SidePref): Cell { return pref === "first" ? "yellow" : "green"; }
 
   async start(): Promise<void> {
     const saved = load();
@@ -57,6 +65,12 @@ class Game {
       this.gameScored = this.state.status === "won"; // already tallied if finished
     } else {
       clear();
+    }
+    // Restore the side picker for a resumed vs-AI game.
+    if (this.mode === "good" || this.mode === "great") {
+      this.sidePref = this.localSide === "green" ? "second" : "first";
+      this.hud.setSideValue(this.sidePref);
+      this.hud.showSidePicker(true);
     }
     this.scene.syncFromState(this.state);
     this.updateStatus();
@@ -112,9 +126,31 @@ class Game {
     if (this.mode === "friend" && mode !== "friend") this.teardownFriend(true);
     this.mode = mode;
     if (mode === "friend") { void this.startFriend(); return; }
-    this.localSide = mode === "2P" ? null : "yellow";
+    // vs-AI: you play your chosen side (yellow=1st, green=2nd). 2P: no "you".
+    const isAi = mode === "good" || mode === "great";
+    this.hud.showSidePicker(isAi);
+    this.localSide = isAi ? this.sideToColor(this.sidePref) : null;
     save(this.state, this.mode, this.localSide);
-    void this.pump();
+    void this.pump(); // if you chose 2nd, the AI (yellow) opens
+  }
+
+  /** Side picker changed. Re-seat the local player and restart so the choice
+   *  applies from move 1. vs-AI restarts the board; the friend host (still
+   *  waiting for an opponent) re-seats and refreshes the share link. */
+  setSide(pref: SidePref): void {
+    this.sidePref = pref;
+    if (this.mode === "good" || this.mode === "great") {
+      this.localSide = this.sideToColor(pref);
+      this.startFreshGame(this.gen + 1); // fresh board → pump opens for the AI if you're 2nd
+    } else if (this.mode === "friend" && this.roomId && !this.peerPresent) {
+      // Host re-seats before the opponent connects; refresh the link's seat.
+      this.localSide = this.sideToColor(pref);
+      this.remoteSide = this.localSide === "yellow" ? "green" : "yellow";
+      this.hud.showLocalSide(this.localSide);
+      this.hud.showScore(this.score, this.localSide);
+      this.showFriendLink();
+      this.persist();
+    }
   }
 
   /** Start the periodic drift check. Every HEARTBEAT_MS we ping the peer with our
@@ -149,13 +185,29 @@ class Game {
       this.roomId = "";
     }
     this.remoteSide = null;
+    this.peerPresent = false;
+    forgetHostRoom();
     this.clearJoinHash(); // so a later "Play a friend" hosts a fresh room, not the dead one
     this.hud.showConnState(null);
     this.hud.hideHostLink();
     this.hud.showLocalSide(null);
     this.hud.showScore(null);
     this.hud.showEndRoom(false);
+    this.hud.showSidePicker(false);
     this.hud.showTransportToggle(false);
+  }
+
+  /** Build + show the host's share link, encoding the transport and the seat the
+   *  joiner takes (the opposite of our color). Also records that we host this
+   *  room so a reload reclaims the host seat. */
+  private showFriendLink(): void {
+    if (!this.roomId) return;
+    rememberHostRoom(this.roomId);
+    const t = this.session instanceof RelaySocket ? "relay" : "p2p";
+    const guestSeat = this.localSide === "yellow" ? "green" : "yellow";
+    this.hud.showHostLink(
+      `${location.origin}${location.pathname}#join=${this.roomId}&t=${t}&seat=${guestSeat}`,
+    );
   }
 
   /** Strip "#join=..." from the URL without reloading. After leaving a room the
@@ -379,17 +431,35 @@ class Game {
     // "Resuming" = we have saved friend state for *this* room (reload / reconnect
     // of an in-progress game). True for both the host reopening their own link
     // and a guest refreshing the join link.
+    const urlParams = new URLSearchParams(location.hash.slice(1));
     const resuming = !!joinId && saved?.mode === "friend" && saved.roomId === joinId;
-    const isRehost = resuming && saved!.humanSide === "yellow";
+    // You host if there's no join link, or you're reopening a link to a room you
+    // created — tracked explicitly so it works regardless of the color you chose
+    // (the old "host == yellow" assumption breaks once the host can pick green).
+    const isRehost = !!joinId && hostedRoom() === joinId;
     const role: "host" | "guest" = isRehost || !joinId ? "host" : "guest";
 
     // Read transport from URL (guest) or toggle (host).
-    const urlParams = new URLSearchParams(location.hash.slice(1));
     const transport: "relay" | "p2p" =
       joinId ? (urlParams.get("t") === "p2p" ? "p2p" : "relay") : this.hud.transport();
 
-    this.localSide = role === "host" ? "yellow" : "green";
-    this.remoteSide = role === "host" ? "green" : "yellow";
+    // Seat: resume → saved color; host → your picked side; guest → the seat the
+    // host encoded in the link (default green, matching pre-feature links).
+    if (resuming && saved!.humanSide) {
+      this.localSide = saved!.humanSide;
+    } else if (role === "host") {
+      this.localSide = this.sideToColor(this.sidePref);
+    } else {
+      this.localSide = urlParams.get("seat") === "yellow" ? "yellow" : "green";
+    }
+    this.remoteSide = this.localSide === "yellow" ? "green" : "yellow";
+    this.peerPresent = false;
+    // Reflect the host's seat in the picker; only the host may change it.
+    this.hud.showSidePicker(role === "host");
+    if (role === "host") {
+      this.sidePref = this.localSide === "yellow" ? "first" : "second";
+      this.hud.setSideValue(this.sidePref);
+    }
     // Restore the in-progress board + generation on reload; otherwise start clean
     // (a fresh guest will adopt the host's state via the first sync).
     if (resuming) {
@@ -426,9 +496,6 @@ class Game {
         save(this.state, this.mode, this.localSide);
       });
       this.session = sock;
-      // Optimistic color assignment (matches DO's first=yellow rule).
-      this.localSide = joinId ? "green" : "yellow";
-      this.remoteSide = joinId ? "yellow" : "green";
     } else {
       // WebRTC P2P: fetch ICE config then build a session with a peer factory.
       let ice: RTCIceServer[];
@@ -464,9 +531,7 @@ class Game {
       if (transport === "relay") {
         // Relay: WebSocket connects automatically on construction.
         // Host: show the link immediately. Guest: no action needed.
-        if (!joinId) {
-          this.hud.showHostLink(`${location.origin}${location.pathname}#join=${this.roomId}&t=relay`);
-        }
+        if (role === "host") this.showFriendLink();
         save(this.state, this.mode, this.localSide, this.roomId, this.score, this.gen);
       } else if (resuming) {
         // Reload/reconnect of an in-progress room — enter the reconnect loop
@@ -474,15 +539,12 @@ class Game {
         // for the host so they can re-share if needed.
         this.roomId = joinId!;
         await (this.session as Session).resume(joinId!);
-        if (role === "host") {
-          this.hud.showHostLink(`${location.origin}${location.pathname}#join=${this.roomId}&t=p2p`);
-        }
+        if (role === "host") this.showFriendLink();
         this.hud.toast("Reconnecting to your game…", 4000);
         save(this.state, this.mode, this.localSide, this.roomId, this.score, this.gen);
       } else if (role === "host") {
         this.roomId = await (this.session as Session).host();
-        const url = `${location.origin}${location.pathname}#join=${this.roomId}&t=p2p`;
-        this.hud.showHostLink(url);
+        this.showFriendLink();
         save(this.state, this.mode, this.localSide, this.roomId, this.score, this.gen);
       } else {
         this.roomId = joinId!;
@@ -528,6 +590,9 @@ class Game {
       save(this.state, this.mode, this.localSide);
       return;
     }
+    // Any message means the opponent is here — lock the host's side picker
+    // (they've already taken the seat the link assigned them).
+    if (!this.peerPresent) { this.peerPresent = true; this.hud.showSidePicker(false); }
     if (m.type === "ping") {
       // Drift check: if the peer's (gen, hash) differs from ours, send our full
       // state so decideSync reconciles. Whichever side is ahead wins; if we're
@@ -613,6 +678,7 @@ async function main() {
     onHint: () => void game.hint(),
     onEndRoom: () => game.endRoom(),
     onResync: () => game.resync(),
+    onSideChange: (p) => game.setSide(p),
   }, "2P");
   const game = new Game(scene, hud, sfx);
   // The AI runs in-browser via WebAssembly, so every mode works everywhere with

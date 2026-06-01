@@ -1,17 +1,21 @@
 // web/src/ui/hud.ts
 import type { Mode } from "../game/persist";
 
+export type SidePref = "first" | "second";
+
 export interface HudCallbacks {
   onModeChange: (mode: Mode) => void;
   onNewGame: () => void;
   onHint: () => void;
   onEndRoom: () => void;
   onResync: () => void;
+  onSideChange: (pref: SidePref) => void;
 }
 
 export class Hud {
   private statusEl = document.createElement("div");
   private modeSel = document.createElement("select");
+  private sideSel = document.createElement("select");
   private newBtn = document.createElement("button");
   private hintBtn = document.createElement("button");
   private endBtn = document.createElement("button");
@@ -42,6 +46,17 @@ export class Hud {
     }
     this.modeSel.value = initialMode;
     this.modeSel.onchange = () => cbs.onModeChange(this.modeSel.value as Mode);
+    for (const [value, label] of [
+      ["first", "You: 1st (yellow)"],
+      ["second", "You: 2nd (green)"],
+    ] as const) {
+      const opt = document.createElement("option");
+      opt.value = value; opt.textContent = label;
+      this.sideSel.appendChild(opt);
+    }
+    this.sideSel.style.display = "none";
+    this.sideSel.title = "Choose whether you move first or second";
+    this.sideSel.onchange = () => cbs.onSideChange(this.sideSel.value as SidePref);
     this.newBtn.textContent = "New game";
     this.newBtn.onclick = () => cbs.onNewGame();
     this.hintBtn.textContent = "Hint";
@@ -54,7 +69,7 @@ export class Hud {
     this.endBtn.className = "end-room";
     this.endBtn.style.display = "none";
     this.endBtn.onclick = () => cbs.onEndRoom();
-    root.append(this.modeSel, this.newBtn, this.hintBtn, this.resyncBtn, this.endBtn, this.statusEl);
+    root.append(this.modeSel, this.sideSel, this.newBtn, this.hintBtn, this.resyncBtn, this.endBtn, this.statusEl);
     this.linkBox.className = "linkbox";
     this.linkBox.style.display = "none";
     this.connChip.className = "conn-chip";
@@ -158,6 +173,15 @@ export class Hud {
 
   /** Chosen transport for a new friend game. */
   transport(): "relay" | "p2p" { return this.p2pCheck.checked ? "p2p" : "relay"; }
+
+  /** Whether the local player wants to move first or second. */
+  side(): SidePref { return this.sideSel.value === "second" ? "second" : "first"; }
+
+  /** Show/hide the side picker (vs-AI always; friend host until connected). */
+  showSidePicker(show: boolean): void { this.sideSel.style.display = show ? "" : "none"; }
+
+  /** Reflect a side choice without firing onSideChange. */
+  setSideValue(pref: SidePref): void { this.sideSel.value = pref; }
 
   /** Show/hide the transport toggle (only visible while setting up friend mode). */
   showTransportToggle(show: boolean): void { this.p2pToggle.style.display = show ? "" : "none"; }

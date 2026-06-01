@@ -49,3 +49,20 @@ export function load(): SavedGame | null {
 export function clear(): void {
   try { localStorage.removeItem(KEY); } catch { /* ignore */ }
 }
+
+// Which friend room *this* device created. Lets a host reopening their own
+// link reclaim the host seat (and its chosen side) regardless of color —
+// the old "host == yellow" assumption breaks once the host can pick green.
+const HOST_KEY = "connect4:hostroom";
+
+export function rememberHostRoom(roomId: string): void {
+  try { localStorage.setItem(HOST_KEY, roomId); } catch { /* ignore */ }
+}
+
+export function forgetHostRoom(): void {
+  try { localStorage.removeItem(HOST_KEY); } catch { /* ignore */ }
+}
+
+export function hostedRoom(): string | null {
+  try { return localStorage.getItem(HOST_KEY); } catch { return null; }
+}

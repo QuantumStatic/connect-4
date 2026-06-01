@@ -8,7 +8,7 @@ import { Hud } from "./hud";
 
 function makeHud(): { hud: Hud; root: HTMLElement } {
   const root = document.createElement("div");
-  const hud = new Hud(root, { onModeChange: () => {}, onNewGame: () => {}, onHint: () => {}, onEndRoom: () => {}, onResync: () => {} }, "2P");
+  const hud = new Hud(root, { onModeChange: () => {}, onNewGame: () => {}, onHint: () => {}, onEndRoom: () => {}, onResync: () => {}, onSideChange: () => {} }, "2P");
   return { hud, root };
 }
 
@@ -78,7 +78,7 @@ describe("Hud end-room button", () => {
     const root = document.createElement("div");
     const hud = new Hud(
       root,
-      { onModeChange: () => {}, onNewGame: () => {}, onHint: () => {}, onEndRoom: () => { ended++; }, onResync: () => {} },
+      { onModeChange: () => {}, onNewGame: () => {}, onHint: () => {}, onEndRoom: () => { ended++; }, onResync: () => {}, onSideChange: () => {} },
       "2P",
     );
     const btn = root.querySelector(".end-room") as HTMLButtonElement;
@@ -92,12 +92,35 @@ describe("Hud end-room button", () => {
   });
 });
 
+describe("Hud side picker", () => {
+  it("defaults to first and reports second when changed", () => {
+    const { hud, root } = makeHud();
+    expect(hud.side()).toBe("first");
+    const sel = root.querySelectorAll("select")[1] as HTMLSelectElement; // [0]=mode, [1]=side
+    sel.value = "second";
+    expect(hud.side()).toBe("second");
+  });
+
+  it("setSideValue reflects without firing onSideChange", () => {
+    let changes = 0;
+    const root = document.createElement("div");
+    const hud = new Hud(
+      root,
+      { onModeChange: () => {}, onNewGame: () => {}, onHint: () => {}, onEndRoom: () => {}, onResync: () => {}, onSideChange: () => { changes++; } },
+      "2P",
+    );
+    hud.setSideValue("second");
+    expect(hud.side()).toBe("second");
+    expect(changes).toBe(0);
+  });
+});
+
 describe("Hud transport toggle", () => {
   it("defaults to relay and reports p2p when checked", () => {
     const root = document.createElement("div");
     const hud = new Hud(
       root,
-      { onModeChange: () => {}, onNewGame: () => {}, onHint: () => {}, onEndRoom: () => {}, onResync: () => {} },
+      { onModeChange: () => {}, onNewGame: () => {}, onHint: () => {}, onEndRoom: () => {}, onResync: () => {}, onSideChange: () => {} },
       "2P",
     );
     expect(hud.transport()).toBe("relay");

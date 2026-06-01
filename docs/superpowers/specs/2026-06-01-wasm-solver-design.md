@@ -79,8 +79,16 @@ line (`main.ts`, pump loop, Hint, mode handling) is unchanged.
 
 4. **`web/src/solver/wasmSolver.ts`** — lazy module loader + book manager:
    - `ensureModule()` — dynamic-import + instantiate once (memoized promise).
-   - `ensureBook(onProgress?)` — fetch `${relayBase}/book/7x6.book` once, with
-     Cache API persistence; write into FS; `loadBook`. Memoized.
+   - `ensureBook(onProgress?)` — load the book once and reuse it forever:
+     1. `cache = await caches.open("c4-book-v1")`.
+     2. `cache.match(BOOK_URL)` — if present, read its `arrayBuffer()` (local,
+        instant, no network).
+     3. Otherwise `fetch(BOOK_URL)` with download progress, then
+        `cache.put(BOOK_URL, response.clone())` to persist it.
+     4. Write the bytes into Emscripten FS and call `loadBook("/7x6.book")`.
+     Memoized in-memory for the session; persisted across sessions via the
+     Cache API (NOT localStorage — a 32 MB binary exceeds its ~5–10 MB,
+     string-only limit). Net effect: one 32 MB download ever per device.
    - `analyze(moves, depth)` — `ensureModule()`; if `depth == null` also
      `ensureBook()`; call into C++; return `AnalyzeResponse`.
 
@@ -102,7 +110,9 @@ scores → `bestMove` → `AnalyzeResponse`. Identical above `client.ts`.
 ### UX / error handling
 
 - First Great/Hint shows "Loading Great player… (one-time 32 MB)" with download
-  progress via the existing HUD thinking indicator; cached forever after.
+  progress via the existing HUD thinking indicator. The book is then persisted
+  in the Cache API, so every subsequent Great/Hint — including after browser
+  restarts — loads it from disk with no network request.
 - The current backend-probe that disables Good/Great up front and its toast are
   removed; AI modes are always available once the module loads.
 - Module-load failure → `SolverOffline` → existing offline handling.

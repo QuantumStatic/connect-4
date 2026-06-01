@@ -59,6 +59,19 @@ describe("Session", () => {
     expect(signal.pushOffer).toHaveBeenCalledWith("ROOM", "restart#1", 1);
   });
 
+  it("re-emits 'connected' after a successful reconnect so the app reconciles", async () => {
+    const peer = new FakePeer();
+    const signal = stubSignal();
+    const states: string[] = [];
+    const s = new Session({ peer, signal: signal as any, role: "host" });
+    s.onState((st) => states.push(st));
+    await s.host();
+    peer.emitState("reconnecting");
+    // The host restarts and (via the stub signal) gets an answer back.
+    await signal.postAnswer("ROOM", "guest-answer", 1);
+    await vi.waitFor(() => expect(states).toContain("connected"), { timeout: 3000 });
+  });
+
   it("rehost fetches current epoch, creates a fresh offer, pushes at epoch+1", async () => {
     const peer = new FakePeer();
     const signal = stubSignal();

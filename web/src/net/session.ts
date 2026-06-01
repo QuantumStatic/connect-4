@@ -113,6 +113,11 @@ export class Session {
             await this.signal.postAnswer(this.roomId, answer, off.epoch);
           }
           this.reconnecting = false;
+          // Re-announce "connected" so the app reconciles state on reconnect.
+          // An ICE restart keeps the same peer/data-channel, so neither
+          // connectionstatechange nor the channel's "open" reliably re-fires —
+          // we emit it explicitly to guarantee a fresh sync after reconnect.
+          if (!this.closed) this.stateFn("connected");
           return;
         } catch {
           await sleep(POLL_MS * (attempt + 1));

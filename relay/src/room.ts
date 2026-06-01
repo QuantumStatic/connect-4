@@ -20,7 +20,10 @@ export class RoomDO extends DurableObject {
   }
 
   private sockets(): WebSocket[] {
-    return this.ctx.getWebSockets();
+    // Only return active (non-rejected) sockets.
+    return this.ctx.getWebSockets().filter(
+      (ws) => !this.ctx.getTags(ws).includes("rejected"),
+    );
   }
 
   async fetch(req: Request): Promise<Response> {
@@ -30,11 +33,12 @@ export class RoomDO extends DurableObject {
     await this.load();
     const existing = this.sockets();
     if (existing.length >= 2) {
-      // Room full — use plain accept (not hibernation API) to avoid persisting
-      // the closed socket in ctx.getWebSockets(), then immediately close.
+      // Room full — accept via the hibernation API (tagged "rejected") so
+      // Miniflare's isolated-storage bookkeeping stays consistent, then
+      // immediately close the server-side socket with code 4001.
       const pair = new WebSocketPair();
       const [client, server] = [pair[0], pair[1]];
-      server.accept();
+      this.ctx.acceptWebSocket(server, ["rejected"]);
       server.close(4001, "room full");
       return new Response(null, { status: 101, webSocket: client });
     }

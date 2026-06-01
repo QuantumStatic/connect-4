@@ -222,7 +222,8 @@ emcc -O3 -std=c++17 \
   -sFORCE_FILESYSTEM=1 \
   -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=67108864 -sMAXIMUM_MEMORY=536870912 \
   -sEXPORT_NAME=createPyconnect4 \
-  -sEXPORTED_RUNTIME_METHODS='["FS","callMain"]' \
+  -sINVOKE_RUN=0 \
+  -sEXPORTED_RUNTIME_METHODS='["FS"]' \
   -o "$out/pyconnect4.js"
 
 echo "Built: $out/pyconnect4.js + pyconnect4.wasm"

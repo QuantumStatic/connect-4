@@ -12,7 +12,7 @@ import { getIceConfig, deleteRoom } from "./net/signal";
 import { hashLog, validateIncoming, mergeScores, decideSync, type WireMsg, type Score } from "./game/protocol";
 
 const GOOD_DEPTH = 10;
-const HEARTBEAT_MS = 15_000;
+const HEARTBEAT_MS = 30_000;
 
 class Game {
   state = new GameState();
@@ -140,6 +140,15 @@ class Game {
     this.hud.showLocalSide(null);
     this.hud.showScore(null);
     this.hud.showEndRoom(false);
+  }
+
+  /** "Resync" button: force an immediate state reconciliation with the peer
+   *  (don't wait for the 30s heartbeat). Sends our full state; decideSync on
+   *  the other end pushes back if they're ahead. */
+  resync(): void {
+    if (!this.session) { this.hud.toast("Not connected to a friend."); return; }
+    this.sendSync();
+    this.hud.toast("Re-syncing with your opponent…", 2500);
   }
 
   /** "End room" button: leave the room, notify the peer, return to local play. */
@@ -520,6 +529,7 @@ async function main() {
     onNewGame: () => game.newGame(),
     onHint: () => void game.hint(),
     onEndRoom: () => game.endRoom(),
+    onResync: () => game.resync(),
   }, "2P");
   const game = new Game(scene, hud, sfx);
   // In hosted/production builds there's no local Python solver running on

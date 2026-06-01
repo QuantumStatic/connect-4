@@ -8,7 +8,7 @@ import { Hud } from "./hud";
 
 function makeHud(): { hud: Hud; root: HTMLElement } {
   const root = document.createElement("div");
-  const hud = new Hud(root, { onModeChange: () => {}, onNewGame: () => {}, onHint: () => {}, onEndRoom: () => {} }, "2P");
+  const hud = new Hud(root, { onModeChange: () => {}, onNewGame: () => {}, onHint: () => {}, onEndRoom: () => {}, onResync: () => {} }, "2P");
   return { hud, root };
 }
 
@@ -78,7 +78,7 @@ describe("Hud end-room button", () => {
     const root = document.createElement("div");
     const hud = new Hud(
       root,
-      { onModeChange: () => {}, onNewGame: () => {}, onHint: () => {}, onEndRoom: () => { ended++; } },
+      { onModeChange: () => {}, onNewGame: () => {}, onHint: () => {}, onEndRoom: () => { ended++; }, onResync: () => {} },
       "2P",
     );
     const btn = root.querySelector(".end-room") as HTMLButtonElement;

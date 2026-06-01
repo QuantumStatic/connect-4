@@ -81,7 +81,13 @@ export class RoomDO extends DurableObject {
         yellow: Math.max(prev?.score.yellow ?? 0, msg.score?.yellow ?? 0),
         green: Math.max(prev?.score.green ?? 0, msg.score?.green ?? 0),
       };
-      this.lastSync = { gen: Math.max(prev?.gen ?? 0, msg.gen ?? 0), log: msg.log, score };
+      const incomingGen = msg.gen ?? 0;
+      const prevGen = prev?.gen ?? 0;
+      this.lastSync = {
+        gen: Math.max(prevGen, incomingGen),
+        log: incomingGen >= prevGen ? msg.log : (prev?.log ?? msg.log),
+        score,
+      };
       await this.ctx.storage.put("lastSync", this.lastSync);
     }
 

@@ -7,6 +7,7 @@ export { RoomDO } from "./room";
 interface Env {
   ROOMS: KVNamespace;
   ROOMS_DO: DurableObjectNamespace;
+  BOOK: R2Bucket;
   TURN_KEY_ID?: string;
   TURN_KEY_API_TOKEN?: string;
   ALLOWED_ORIGIN?: string;
@@ -138,6 +139,17 @@ export default {
       }
       if (req.headers.get("Upgrade") !== "websocket") return empty(426, req, env);
       return stub.fetch(req);
+    }
+
+    // GET /book/:name  (opening book asset, served from R2 with a long cache)
+    if (req.method === "GET" && parts[0] === "book" && parts[1]) {
+      const obj = await env.BOOK.get(parts[1]);
+      if (!obj) return empty(404, req, env);
+      const headers = new Headers(corsHeaders(req, env));
+      obj.writeHttpMetadata(headers);
+      headers.set("Cache-Control", "public, max-age=31536000, immutable");
+      headers.set("Content-Type", "application/octet-stream");
+      return new Response(obj.body, { status: 200, headers });
     }
 
     return empty(404, req, env);

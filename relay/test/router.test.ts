@@ -99,6 +99,27 @@ describe("relay router", () => {
   it("DELETE /ws/:id tears down the room and returns 204", async () => {
     expect((await call("DELETE", "/ws/some-room")).status).toBe(204);
   });
+
+  it("GET /book/:name streams the object with CORS + immutable cache", async () => {
+    const body = new Uint8Array([7, 6, 12, 8, 8, 23]);
+    (env as any).BOOK = {
+      get: async (key: string) =>
+        key === "7x6.book"
+          ? { body: new Response(body).body, writeHttpMetadata: (_h: Headers) => {} }
+          : null,
+    };
+    const res = await call("GET", "/book/7x6.book");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBeTruthy();
+    expect(res.headers.get("Cache-Control")).toMatch(/immutable/);
+    const buf = new Uint8Array(await res.arrayBuffer());
+    expect(buf[0]).toBe(7);
+  });
+
+  it("GET /book/:name is 404 when the object is missing", async () => {
+    (env as any).BOOK = { get: async () => null };
+    expect((await call("GET", "/book/missing.book")).status).toBe(404);
+  });
 });
 
 describe("GET /ice TURN branch", () => {

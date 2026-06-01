@@ -15,5 +15,11 @@ class_name = "RoomDO"
 tag = "v1"
 new_sqlite_classes = ["RoomDO"]
 
+# Opening book for the in-browser WASM solver, served at GET /book/:name.
+[[r2_buckets]]
+binding = "BOOK"
+bucket_name = "connect4-book"
+preview_bucket_name = "connect4-book"
+
 # TURN: set via `wrangler secret put TURN_KEY_ID` and `TURN_KEY_API_TOKEN`.
 # STUN needs no secret.

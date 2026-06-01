@@ -99,9 +99,10 @@ class Game {
   }
 
   /** Send our full game state to the peer (generation + log + score). Used on
-   *  connect/reconnect and whenever we detect we're ahead of the peer. */
-  private sendSync(): void {
-    this.session?.send({ type: "sync", gen: this.gen, log: this.state.moves, score: this.score });
+   *  connect/reconnect and whenever we detect we're ahead of the peer. Returns
+   *  false if the channel was closed and the message was dropped. */
+  private sendSync(): boolean {
+    return this.session?.send({ type: "sync", gen: this.gen, log: this.state.moves, score: this.score }) ?? false;
   }
 
   setMode(mode: Mode): void {
@@ -120,7 +121,11 @@ class Game {
   private startHeartbeat(): void {
     if (this.heartbeat !== null) clearInterval(this.heartbeat);
     this.heartbeat = window.setInterval(() => {
-      this.session?.send({ type: "ping", gen: this.gen, hash: hashLog(this.state.moves) });
+      if (!this.session) return;
+      const sent = this.session.send({ type: "ping", gen: this.gen, hash: hashLog(this.state.moves) });
+      // If the ping couldn't go out, the channel died silently (no "reconnecting"
+      // event) — kick a reconnect so the boards re-sync automatically.
+      if (!sent) this.session.reconnectNow();
     }, HEARTBEAT_MS);
   }
 
@@ -157,8 +162,14 @@ class Game {
    *  the other end pushes back if they're ahead. */
   resync(): void {
     if (!this.session) { this.hud.toast("Not connected to a friend."); return; }
-    this.sendSync();
-    this.hud.toast("Re-syncing with your opponent…", 2500);
+    if (this.sendSync()) {
+      this.hud.toast("Re-syncing with your opponent…", 2500);
+    } else {
+      // Channel is dead — that's why state drifted. Force a reconnect; the
+      // post-reconnect sync will reconcile both boards.
+      this.hud.toast("Connection dropped — reconnecting…", 3500);
+      this.session.reconnectNow();
+    }
   }
 
   /** "End room" button: leave the room, notify the peer, return to local play. */

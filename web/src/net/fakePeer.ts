@@ -22,7 +22,7 @@ export class FakePeer implements Peer {
   async acceptOffer(sdp: string): Promise<string> { return `answer-to:${sdp}`; }
   async acceptAnswer(_sdp: string): Promise<void> { /* no-op */ }
   async restart(): Promise<string> { this.restarts++; return `restart#${this.restarts}`; }
-  send(msg: WireMsg): void { this.link?.msgFn(msg); }
+  send(msg: WireMsg): boolean { this.link?.msgFn(msg); return this.link !== null; }
   onMessage(fn: (m: WireMsg) => void): void { this.msgFn = fn; }
   onState(fn: (s: ConnState) => void): void { this.stateFn = fn; }
   close(): void { /* no-op */ }

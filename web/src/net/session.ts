@@ -41,7 +41,14 @@ export class Session {
 
   onMessage(fn: (m: WireMsg) => void): void { this.msgFn = fn; }
   onState(fn: (s: ConnState) => void): void { this.stateFn = fn; }
-  send(m: WireMsg): void { this.peer.send(m); }
+  /** Returns false if the channel was closed and the message was dropped. */
+  send(m: WireMsg): boolean { return this.peer.send(m); }
+
+  /** Force a reconnect attempt now (e.g. the channel went silently dead and the
+   *  peer never emitted "reconnecting"). No-op if already reconnecting/closed. */
+  reconnectNow(): void {
+    if (!this.reconnecting && !this.closed) { this.stateFn("reconnecting"); void this.reconnect(); }
+  }
 
   /** Host: create offer, register room, return id for the share link, then poll
    *  for the guest's answer in the background. */

@@ -96,6 +96,15 @@ describe("Session", () => {
     await vi.waitFor(() => expect(acceptSpy).toHaveBeenCalledWith("guest-answer"), { timeout: 3000 });
   });
 
+  it("reconnectNow() triggers a host ICE-restart when the channel went silently dead", async () => {
+    const peer = new FakePeer();
+    const signal = stubSignal();
+    const s = new Session({ peer, signal: signal as any, role: "host" });
+    await s.host();
+    s.reconnectNow();
+    await vi.waitFor(() => expect(peer.restarts).toBe(1));
+  });
+
   it("on reconnecting, the GUEST does NOT issue an offer (no glare)", async () => {
     const peer = new FakePeer();
     const signal = stubSignal();

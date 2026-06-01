@@ -11,7 +11,9 @@ export interface Peer {
   acceptOffer(sdp: string): Promise<string>;
   acceptAnswer(sdp: string): Promise<void>;
   restart(): Promise<string>;
-  send(msg: WireMsg): void;
+  /** Returns true if the message went out over an open channel, false if it was
+   *  dropped because the channel isn't open (caller may then force a reconnect). */
+  send(msg: WireMsg): boolean;
   onMessage(fn: (m: WireMsg) => void): void;
   onState(fn: (s: ConnState) => void): void;
   close(): void;
@@ -86,8 +88,9 @@ export class RtcPeer implements Peer {
     return JSON.stringify(this.pc.localDescription);
   }
 
-  send(msg: WireMsg): void {
-    if (this.dc?.readyState === "open") this.dc.send(JSON.stringify(msg));
+  send(msg: WireMsg): boolean {
+    if (this.dc?.readyState === "open") { this.dc.send(JSON.stringify(msg)); return true; }
+    return false;
   }
   onMessage(fn: (m: WireMsg) => void): void { this.msgFn = fn; }
   onState(fn: (s: ConnState) => void): void { this.stateFn = fn; }

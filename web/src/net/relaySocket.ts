@@ -70,8 +70,11 @@ export class RelaySocket implements Transport {
 
   reconnectNow(): void {
     if (this.closed) return;
+    // Cancel any pending backoff so we don't get a double-open after the forced one.
+    if (this.timer !== null) { (globalThis as any).clearTimeout(this.timer); this.timer = null; }
     try { this.ws?.close(); } catch { /* ignore */ }
-    // onclose → onDrop schedules a reopen; force immediate if no socket.
+    // ws.close() → onclose → onDrop schedules the reopen (async in browsers).
+    // If there's no live socket, drive onDrop directly.
     if (this.timer === null) this.onDrop();
   }
 

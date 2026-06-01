@@ -9,6 +9,8 @@ import { Hud } from "./ui/hud";
 import { Session } from "./net/session";
 import { RtcPeer } from "./net/peer";
 import { getIceConfig, deleteRoom } from "./net/signal";
+import { RelaySocket } from "./net/relaySocket";
+import type { Transport } from "./net/transport";
 import { hashLog, validateIncoming, mergeScores, decideSync, type WireMsg, type Score } from "./game/protocol";
 
 const GOOD_DEPTH = 10;
@@ -26,7 +28,7 @@ class Game {
   // the moment the lane is clear (one chip in flight at a time — no collisions).
   private busy = false;
   private pendingCol: number | null = null;
-  private session: Session | null = null;
+  private session: Transport | null = null;
   private remoteSide: Cell | null = null;
   private roomId = "";
   // Running win tally for friend mode. Computed locally on each side from the
@@ -146,6 +148,7 @@ class Game {
     this.hud.showLocalSide(null);
     this.hud.showScore(null);
     this.hud.showEndRoom(false);
+    this.hud.showTransportToggle(false);
   }
 
   /** Strip "#join=..." from the URL without reloading. After leaving a room the
@@ -362,6 +365,12 @@ class Game {
     const resuming = !!joinId && saved?.mode === "friend" && saved.roomId === joinId;
     const isRehost = resuming && saved!.humanSide === "yellow";
     const role: "host" | "guest" = isRehost || !joinId ? "host" : "guest";
+
+    // Read transport from URL (guest) or toggle (host).
+    const urlParams = new URLSearchParams(location.hash.slice(1));
+    const transport: "relay" | "p2p" =
+      joinId ? (urlParams.get("t") === "p2p" ? "p2p" : "relay") : this.hud.transport();
+
     this.localSide = role === "host" ? "yellow" : "green";
     this.remoteSide = role === "host" ? "green" : "yellow";
     // Restore the in-progress board + generation on reload; otherwise start clean
@@ -381,24 +390,34 @@ class Game {
     this.hud.showLocalSide(this.localSide);
     this.hud.showScore(this.score, this.localSide);
     this.hud.showEndRoom(true);
+    this.hud.showTransportToggle(true);
     this.updateStatus();
     this.hud.showConnState("connecting");
     this.startHeartbeat();
 
-    let ice: RTCIceServer[];
-    try { ice = await getIceConfig(); }
-    catch { this.hud.toast("Relay offline — can't start an online game."); this.hud.showConnState("disconnected"); return; }
-
-    // Factory (not a fixed peer) so the session can build a FRESH peer on every
-    // reconnect — required to pair with a peer that did a full page refresh.
-    this.session = new Session({ makePeer: () => new RtcPeer(ice, role), role });
+    if (transport === "relay") {
+      // WebSocket relay: client picks the room id; the DO is created lazily.
+      // Color comes from the DO's welcome frame once connected.
+      this.roomId = joinId ?? randomRoomId();
+      const sock = new RelaySocket(`${relayWsBase()}/ws/${this.roomId}`);
+      this.session = sock;
+      // Optimistic color assignment (matches DO's first=yellow rule).
+      this.localSide = joinId ? "green" : "yellow";
+      this.remoteSide = joinId ? "yellow" : "green";
+    } else {
+      // WebRTC P2P: fetch ICE config then build a session with a peer factory.
+      let ice: RTCIceServer[];
+      try { ice = await getIceConfig(); }
+      catch { this.hud.toast("Relay offline — can't start an online game."); this.hud.showConnState("disconnected"); return; }
+      this.session = new Session({ makePeer: () => new RtcPeer(ice, role), role });
+    }
     // 30s cap on the initial handshake — but ONLY for a guest, who is joining an
     // existing room and should connect quickly. A host legitimately waits
     // (often minutes) for a friend to open the link, so it has no timeout and
     // keeps its share-link visible until someone connects or it ends the room.
     let connected = false;
     let handshakeTimeout: number | undefined;
-    if (role === "guest") {
+    if (transport === "p2p" && role === "guest") {
       handshakeTimeout = window.setTimeout(() => {
         if (!connected) this.handshakeFailed(role);
       }, 30_000);
@@ -409,7 +428,7 @@ class Game {
         connected = true;
         if (handshakeTimeout !== undefined) window.clearTimeout(handshakeTimeout);
         this.sendSync(); // exchange full state (gen + log + score) on every (re)connect
-      } else if (s === "disconnected" && !connected && role === "guest") {
+      } else if (s === "disconnected" && !connected && transport === "p2p" && role === "guest") {
         if (handshakeTimeout !== undefined) window.clearTimeout(handshakeTimeout);
         this.handshakeFailed(role);
       }
@@ -417,30 +436,36 @@ class Game {
     this.session.onMessage((m) => this.onWire(m));
 
     try {
-      if (resuming) {
+      if (transport === "relay") {
+        // Relay: WebSocket connects automatically on construction.
+        // Host: show the link immediately. Guest: no action needed.
+        if (!joinId) {
+          this.hud.showHostLink(`${location.origin}${location.pathname}#join=${this.roomId}&t=relay`);
+        }
+        save(this.state, this.mode, this.localSide, this.roomId, this.score, this.gen);
+      } else if (resuming) {
         // Reload/reconnect of an in-progress room — enter the reconnect loop
         // (host re-offers, guest waits for the fresh offer). Re-show the link
         // for the host so they can re-share if needed.
         this.roomId = joinId!;
-        await this.session.resume(joinId!);
+        await (this.session as Session).resume(joinId!);
         if (role === "host") {
-          this.hud.showHostLink(`${location.origin}${location.pathname}#join=${this.roomId}`);
+          this.hud.showHostLink(`${location.origin}${location.pathname}#join=${this.roomId}&t=p2p`);
         }
         this.hud.toast("Reconnecting to your game…", 4000);
+        save(this.state, this.mode, this.localSide, this.roomId, this.score, this.gen);
       } else if (role === "host") {
-        this.roomId = await this.session.host();
-        const url = `${location.origin}${location.pathname}#join=${this.roomId}`;
+        this.roomId = await (this.session as Session).host();
+        const url = `${location.origin}${location.pathname}#join=${this.roomId}&t=p2p`;
         this.hud.showHostLink(url);
+        save(this.state, this.mode, this.localSide, this.roomId, this.score, this.gen);
       } else {
         this.roomId = joinId!;
-        await this.session.join(joinId!);
+        await (this.session as Session).join(joinId!);
+        save(this.state, this.mode, this.localSide, this.roomId, this.score, this.gen);
       }
-      // Persist the role + roomId now (not after the first move) so reopening
-      // the link counts as a rehost even if the original tab was closed before
-      // any moves were played.
-      save(this.state, this.mode, this.localSide, this.roomId);
     } catch (e) {
-      window.clearTimeout(handshakeTimeout);
+      if (handshakeTimeout !== undefined) window.clearTimeout(handshakeTimeout);
       this.handshakeFailed(role, e);
     }
   }
@@ -544,6 +569,19 @@ class Game {
   /** Hosted (Cloudflare Pages) builds have no local solver; flag it up-front so
    *  Good/Great are disabled in the menu instead of failing on first move. */
   markNoLocalSolver(): void { this.handleOffline("no-local-solver"); }
+}
+
+function randomRoomId(): string {
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  let s = "";
+  for (const x of b) s += x.toString(36).padStart(2, "0");
+  return s;
+}
+
+function relayWsBase(): string {
+  const http = ((import.meta as any).env?.VITE_RELAY_URL ?? location.origin).replace(/\/$/, "");
+  return http.replace(/^http/, "ws"); // http→ws, https→wss
 }
 
 async function main() {

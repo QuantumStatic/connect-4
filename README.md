@@ -1,6 +1,8 @@
 # Connect 4
 
-Local-only Connect 4 with a perfect-play AI ([Pascal Pons solver](https://github.com/PascalPons/connect4), vendored C++), GPU-accelerated 2D graphics (PixiJS v8), weighty falling-chip physics, plastic-impact audio, 2-player hot-seat, and game resume on reload.
+Connect 4 with a perfect-play AI ([Pascal Pons solver](https://github.com/PascalPons/connect4), vendored C++), GPU-accelerated 2D graphics (PixiJS v8), weighty falling-chip physics, plastic-impact audio, 2-player hot-seat, online play with a friend, and game resume on reload.
+
+The AI runs **entirely in the browser** via WebAssembly — the same Pons C++ compiled with Emscripten (see [`solver/wasm/`](solver/wasm/)). No backend is needed to play vs CPU online; the deployed site is fully self-contained. The 32 MB opening book is lazy-loaded from the relay (R2-backed) on first use of the Great player / Hint and cached on-device, so it downloads once. The Python/FastAPI backend below is now **optional**, kept for local development and as the reference solver implementation.
 
 **License:** AGPL-3.0 (inherited from the vendored solver).
 
@@ -8,37 +10,42 @@ Local-only Connect 4 with a perfect-play AI ([Pascal Pons solver](https://github
 
 ## Run it
 
-**Prerequisites:** Python 3.11+, Node 20+, a C++11 compiler (clang on macOS, gcc on Linux, MSVC on Windows), CMake 3.18+.
+**Prerequisites:** Node 20+. (The AI is a prebuilt WASM module, committed under `web/src/solver/wasm/` — no Python or C++ toolchain needed just to run the app.)
 
 ```bash
 git clone --recurse-submodules <this-repo> connect-4
-cd connect-4
-
-# 1. Create a Python venv and install the solver + backend
-python3.11 -m venv .venv
-. .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install ./solver          # compiles the C++ binding (~30s first time)
-pip install -e "./backend[dev]"
-
-# 2. Download the opening book (recommended) so the Great player opens instantly
-python solver/fetch_opening_book.py     # ~32 MB, one-time; --small for 6 MB
-
-# 3. Start the backend
-python -m pyconnect4_backend  # runs on http://127.0.0.1:8000
-
-# 4. In a new terminal, start the frontend
-cd web
+cd connect-4/web
 npm install
 npm run dev                   # opens on http://localhost:5173
 ```
 
-Open **http://localhost:5173** in your browser.
+Open **http://localhost:5173** in your browser. Every mode — including vs Good / vs Great / Hint — works with no backend.
 
-> **Opening book:** Without it, the Great player still plays perfectly but its
-> early moves take 10–30s each (it solves the opening from scratch). The book is
-> a precomputed lookup table that makes opening moves instant. It's ~32 MB so it
-> isn't committed — `solver/fetch_opening_book.py` downloads it once into
-> `solver/data/`. Set `C4_OPENING_BOOK=/path/to/7x6.book` to point elsewhere.
+> **Opening book in dev:** the Great player and Hint lazy-load the 32 MB book
+> from the relay at `GET /book/7x6.book`. Locally that route 404s unless you run
+> the relay (or set `VITE_RELAY_URL` to a deployed one), so Great/Hint will
+> report the engine as offline while **2 Player and vs Good still work fully**
+> (vs Good is bookless). To exercise Great locally, run the relay with the book
+> in R2, or set `VITE_RELAY_URL=https://<your-relay>`.
+
+### Optional: Python backend + native solver
+
+Only needed for solver development or the pytest suites — the app does not use it.
+
+```bash
+python3.11 -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install ./solver          # compiles the C++ binding (~30s first time)
+pip install -e "./backend[dev]"
+python solver/fetch_opening_book.py                # ~32 MB book into solver/data/
+python -m pyconnect4_backend                       # http://127.0.0.1:8000
+```
+
+### Rebuilding the WASM solver
+
+The committed `web/src/solver/wasm/pyconnect4.{js,wasm}` are built from the
+vendored C++ with Emscripten. To rebuild: install [emsdk](https://github.com/emscripten-core/emsdk),
+`source ~/emsdk/emsdk_env.sh`, then `bash solver/wasm/build.sh`. See
+[`solver/wasm/README.md`](solver/wasm/README.md).
 
 ---
 

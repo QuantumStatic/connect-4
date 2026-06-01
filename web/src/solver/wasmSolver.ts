@@ -38,32 +38,52 @@ async function ensureBook(onProgress?: (frac: number) => void): Promise<void> {
   return bookPromise;
 }
 
+// The Pons book file starts with width, height bytes (7, 6). Pons' loadBook
+// only *logs* on a bad file — it doesn't throw — so a 404/HTML-fallback/corrupt
+// download would silently leave the solver bookless and grind the opening for
+// minutes on the main thread. Validate the header so a bad book fails fast
+// (→ SolverOffline) instead of hanging the UI.
+function looksLikeBook(b: Uint8Array): boolean {
+  return b.length > 6 && b[0] === 7 && b[1] === 6;
+}
+
 async function loadBookBytes(onProgress?: (frac: number) => void): Promise<Uint8Array> {
   const cache = await caches.open(CACHE_NAME);
   const hit = await cache.match(BOOK_URL);
-  if (hit) return new Uint8Array(await hit.arrayBuffer());
+  if (hit) {
+    const cached = new Uint8Array(await hit.arrayBuffer());
+    if (looksLikeBook(cached)) return cached;
+    await cache.delete(BOOK_URL); // poisoned entry (e.g. cached an HTML fallback) — refetch
+  }
 
   const res = await fetch(BOOK_URL);
   if (!res.ok) throw new Error(`book ${res.status}`);
-  await cache.put(BOOK_URL, res.clone());
 
   // Stream for progress when possible; fall back to a single arrayBuffer().
   const total = Number(res.headers.get("Content-Length") ?? 0);
-  if (!res.body || !total || !onProgress) return new Uint8Array(await res.arrayBuffer());
-  const reader = res.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let received = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    received += value.length;
-    onProgress(received / total);
+  let bytes: Uint8Array;
+  if (!res.body || !total || !onProgress) {
+    bytes = new Uint8Array(await res.arrayBuffer());
+  } else {
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.length;
+      onProgress(received / total);
+    }
+    bytes = new Uint8Array(received);
+    let off = 0;
+    for (const c of chunks) { bytes.set(c, off); off += c.length; }
   }
-  const out = new Uint8Array(received);
-  let off = 0;
-  for (const c of chunks) { out.set(c, off); off += c.length; }
-  return out;
+
+  if (!looksLikeBook(bytes)) throw new Error("invalid book payload");
+  // Uint8Array is a valid BodyInit at runtime; cast past the ArrayBufferLike generic.
+  await cache.put(BOOK_URL, new Response(bytes as unknown as BodyInit)); // only cache a validated book
+  return bytes;
 }
 
 /** Analyze a position. `depth` null → full perfect solve (loads the book);

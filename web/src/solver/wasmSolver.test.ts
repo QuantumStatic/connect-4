@@ -34,8 +34,8 @@ describe("analyzeWasm", () => {
     fakeModule.analyze.mockReturnValue({
       scores: [0, 0, 0, 0, 0, 0, 0], bestMove: 3, gameStatus: "ongoing", ok: true,
     });
-    const bytes = new Uint8Array([1, 2, 3]);
-    const cacheMatch = vi.fn(async () => new Response(bytes));
+    const book = new Uint8Array([7, 6, 12, 8, 8, 23, 0]); // valid header (w=7,h=6)
+    const cacheMatch = vi.fn(async () => new Response(book));
     const cachePut = vi.fn(async () => {});
     (globalThis as any).caches = { open: vi.fn(async () => ({ match: cacheMatch, put: cachePut })) };
 
@@ -43,6 +43,20 @@ describe("analyzeWasm", () => {
     await analyzeWasm("3", null);
     expect(fakeModule.loadBook).toHaveBeenCalledTimes(1);          // memoized
     expect(fakeModule.analyze).toHaveBeenLastCalledWith("3", -1);  // null → -1 sentinel
+  });
+
+  it("rejects a non-book payload (e.g. an HTML 404 fallback) instead of hanging", async () => {
+    fakeModule.analyze.mockReturnValue({
+      scores: [0, 0, 0, 0, 0, 0, 0], bestMove: 3, gameStatus: "ongoing", ok: true,
+    });
+    const html = new TextEncoder().encode("<!doctype html><html></html>");
+    const cacheDelete = vi.fn(async () => {});
+    (globalThis as any).caches = {
+      open: vi.fn(async () => ({ match: vi.fn(async () => null), put: vi.fn(), delete: cacheDelete })),
+    };
+    (globalThis as any).fetch = vi.fn(async () => new Response(html));
+    await expect(analyzeWasm("", null)).rejects.toThrow(/invalid book/i);
+    expect(fakeModule.loadBook).not.toHaveBeenCalled();
   });
 
   it("throws on an illegal sequence (ok=false)", async () => {

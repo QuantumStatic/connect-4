@@ -1,4 +1,4 @@
-import { env, runInDurableObject, runDurableObjectAlarm } from "cloudflare:test";
+import { env, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
 // Open a WebSocket to the DO for room `id`. Returns the client-side socket.
@@ -82,5 +82,36 @@ describe("RoomDO", () => {
     const peerGone = next(a);
     b.close();
     expect(await peerGone).toMatchObject({ t: "peer", here: false });
+  });
+
+  it("DELETE wipes stored sync and cancels the idle alarm (no orphan room)", async () => {
+    const a = await connect("room-del");
+    await next(a); // welcome
+    a.send(JSON.stringify({ type: "sync", gen: 2, log: "334", score: { yellow: 1, green: 0 } }));
+    await new Promise((r) => setTimeout(r, 50)); // let the DO cache + arm the alarm
+
+    const stub = env.ROOMS_DO.get(env.ROOMS_DO.idFromName("room-del"));
+    await runInDurableObject(stub, async (_inst, ctx) => {
+      expect(await ctx.storage.get("lastSync")).toBeTruthy();
+      expect(await ctx.storage.getAlarm()).not.toBeNull();
+    });
+
+    const del = await stub.fetch("https://do/ws/room-del", { method: "DELETE" });
+    expect(del.status).toBe(204);
+
+    await runInDurableObject(stub, async (_inst, ctx) => {
+      expect(await ctx.storage.get("lastSync")).toBeUndefined();
+      expect(await ctx.storage.getAlarm()).toBeNull();
+    });
+  });
+
+  it("DELETE closes any live socket with code 1000", async () => {
+    const a = await connect("room-del-close");
+    await next(a); // welcome
+    const closed = new Promise<number>((resolve) =>
+      a.addEventListener("close", (e: CloseEvent) => resolve(e.code), { once: true }));
+    const stub = env.ROOMS_DO.get(env.ROOMS_DO.idFromName("room-del-close"));
+    await stub.fetch("https://do/ws/room-del-close", { method: "DELETE" });
+    expect(await closed).toBe(1000);
   });
 });

@@ -95,6 +95,10 @@ describe("relay router", () => {
     );
     expect(res.status).toBe(426);
   });
+
+  it("DELETE /ws/:id tears down the room and returns 204", async () => {
+    expect((await call("DELETE", "/ws/some-room")).status).toBe(204);
+  });
 });
 
 describe("GET /ice TURN branch", () => {

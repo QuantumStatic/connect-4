@@ -57,3 +57,9 @@ export async function pollOffer(id: string, sinceEpoch: number): Promise<{ offer
 export async function deleteRoom(id: string): Promise<void> {
   try { await fetch(u(`/room/${id}`), { method: "DELETE" }); } catch { /* ignore */ }
 }
+
+/** Tear down a relay (Durable Object) room immediately instead of waiting for
+ *  its idle alarm — so "End room" leaves no orphan behind. Fire and forget. */
+export async function closeRelayRoom(id: string): Promise<void> {
+  try { await fetch(u(`/ws/${id}`), { method: "DELETE" }); } catch { /* ignore */ }
+}

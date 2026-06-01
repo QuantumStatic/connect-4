@@ -8,7 +8,7 @@ import { Scene } from "./render/scene";
 import { Hud } from "./ui/hud";
 import { Session } from "./net/session";
 import { RtcPeer } from "./net/peer";
-import { getIceConfig, deleteRoom } from "./net/signal";
+import { getIceConfig, deleteRoom, closeRelayRoom } from "./net/signal";
 import { RelaySocket } from "./net/relaySocket";
 import type { Transport } from "./net/transport";
 import { hashLog, validateIncoming, mergeScores, decideSync, type WireMsg, type Score } from "./game/protocol";
@@ -135,12 +135,19 @@ class Game {
    *  it was intentional (and won't try to reconnect), and frees the relay room. */
   private teardownFriend(notify: boolean): void {
     if (this.heartbeat !== null) { clearInterval(this.heartbeat); this.heartbeat = null; }
+    const wasRelay = this.session instanceof RelaySocket;
     if (this.session) {
       if (notify) this.session.send({ type: "bye" });
       this.session.close();
       this.session = null;
     }
-    if (this.roomId) { void deleteRoom(this.roomId); this.roomId = ""; }
+    if (this.roomId) {
+      // Free the room now instead of waiting for it to expire. Relay rooms are
+      // Durable Objects (DELETE /ws/:id); P2P rooms live in KV (DELETE /room/:id).
+      if (wasRelay) void closeRelayRoom(this.roomId);
+      else void deleteRoom(this.roomId);
+      this.roomId = "";
+    }
     this.remoteSide = null;
     this.clearJoinHash(); // so a later "Play a friend" hosts a fresh room, not the dead one
     this.hud.showConnState(null);

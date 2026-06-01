@@ -27,6 +27,12 @@ export class RoomDO extends DurableObject {
   }
 
   async fetch(req: Request): Promise<Response> {
+    if (req.method === "DELETE") {
+      // Explicit teardown (e.g. "End room"): close any live sockets, wipe the
+      // cached sync, and cancel the idle alarm so no orphan room lingers.
+      await this.destroy();
+      return new Response(null, { status: 204 });
+    }
     if (req.headers.get("Upgrade") !== "websocket") {
       return new Response("expected websocket", { status: 426 });
     }
@@ -110,6 +116,18 @@ export class RoomDO extends DurableObject {
 
   private async armAlarm(): Promise<void> {
     await this.ctx.storage.setAlarm(Date.now() + IDLE_TTL_MS);
+  }
+
+  /** Wipe the room now: close every socket (rejected ones included), drop the
+   *  cached sync, and cancel the pending alarm. Leaves nothing behind. */
+  private async destroy(): Promise<void> {
+    for (const ws of this.ctx.getWebSockets()) {
+      try { ws.close(1000, "room closed"); } catch { /* already closing */ }
+    }
+    this.lastSync = null;
+    this.loaded = true; // avoid a needless reload before a possible re-create
+    await this.ctx.storage.deleteAll();
+    await this.ctx.storage.deleteAlarm();
   }
 
   async alarm(): Promise<void> {

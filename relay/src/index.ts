@@ -128,10 +128,15 @@ export default {
       }
     }
 
-    // GET /ws/:id  (Durable Object websocket relay)
+    // /ws/:id  (Durable Object websocket relay)
     if (parts[0] === "ws" && parts[1]) {
-      if (req.headers.get("Upgrade") !== "websocket") return empty(426, req, env);
       const stub = env.ROOMS_DO.get(env.ROOMS_DO.idFromName(parts[1]));
+      // DELETE /ws/:id -> explicit room teardown (idempotent). 204 with CORS.
+      if (req.method === "DELETE") {
+        await stub.fetch(req);
+        return empty(204, req, env);
+      }
+      if (req.headers.get("Upgrade") !== "websocket") return empty(426, req, env);
       return stub.fetch(req);
     }
 

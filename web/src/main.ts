@@ -231,6 +231,10 @@ class Game {
 
   async hint(): Promise<void> {
     if (!this.solverOnline || this.state.status !== "ongoing") return;
+    // Only hint on your own move — in vs-AI / friend mode, refuse on the
+    // opponent's turn (otherwise it would reveal their best move).
+    const myTurn = this.mode === "2P" || this.state.toMove === this.localSide;
+    if (!myTurn) { this.hud.toast("Hint is only available on your turn."); return; }
     try {
       const res = await analyze(this.state.moves, null, (frac) =>
         this.hud.setThinking(`Loading hint engine… ${Math.round(frac * 100)}% (one-time)`));

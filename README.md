@@ -60,6 +60,11 @@ Resume: closing and reopening the tab restores the last game in progress.
 Two friends play directly browser-to-browser over WebRTC — no game server holds
 state. A stateless Cloudflare Worker only brokers the connection.
 
+Connections default to a reliable WebSocket relay (a tiny Cloudflare Durable
+Object that only forwards moves). A "Direct (P2P)" toggle uses browser-to-browser
+WebRTC instead. Either way, no game state is stored on a server beyond a transient
+in-memory cache for reconnects.
+
 **Deploy (one-time):**
 1. Deploy the relay: see [`relay/README.md`](relay/README.md).
 2. Deploy the web app to Cloudflare Pages (`cd web && npm run build`, then point

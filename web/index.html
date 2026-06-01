@@ -21,6 +21,16 @@
       @media (max-width: 640px) {
         .hud button, .hud select { flex: 0 0 100%; min-width: 0; }
       }
+      /* On desktop: cap the board + controls so the page doesn't blow up to
+         full window width, and use compact controls in a single row. */
+      @media (min-width: 641px) {
+        #canvas-host { max-width: 560px; margin: 0 auto; }
+        .hud { max-width: 560px; }
+        .hud button, .hud select {
+          padding: 8px 14px; font-size: 15px; min-height: 0;
+          border-radius: 8px; flex: 0 1 auto;
+        }
+      }
       .hud button:disabled { opacity: 0.5; cursor: not-allowed; }
       .hud button.end-room { border-color: #6b2a3a; color: #e88; }
       .p2p-toggle { font-size: 14px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; min-height: 48px; }

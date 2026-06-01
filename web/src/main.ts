@@ -12,7 +12,7 @@ import { getIceConfig, deleteRoom } from "./net/signal";
 import { hashLog, validateIncoming, mergeScores, decideSync, type WireMsg, type Score } from "./game/protocol";
 
 const GOOD_DEPTH = 10;
-const HEARTBEAT_MS = 30_000;
+const HEARTBEAT_MS = 6_000;
 
 class Game {
   state = new GameState();
@@ -389,8 +389,9 @@ class Game {
     try { ice = await getIceConfig(); }
     catch { this.hud.toast("Relay offline — can't start an online game."); this.hud.showConnState("disconnected"); return; }
 
-    const peer = new RtcPeer(ice, role);
-    this.session = new Session({ peer, role });
+    // Factory (not a fixed peer) so the session can build a FRESH peer on every
+    // reconnect — required to pair with a peer that did a full page refresh.
+    this.session = new Session({ makePeer: () => new RtcPeer(ice, role), role });
     // 30s cap on the initial handshake — but ONLY for a guest, who is joining an
     // existing room and should connect quickly. A host legitimately waits
     // (often minutes) for a friend to open the link, so it has no timeout and
@@ -416,13 +417,16 @@ class Game {
     this.session.onMessage((m) => this.onWire(m));
 
     try {
-      if (isRehost) {
-        // Resuming our own room — re-publish a fresh offer at a new epoch.
+      if (resuming) {
+        // Reload/reconnect of an in-progress room — enter the reconnect loop
+        // (host re-offers, guest waits for the fresh offer). Re-show the link
+        // for the host so they can re-share if needed.
         this.roomId = joinId!;
-        await this.session.rehost(joinId!);
-        const url = `${location.origin}${location.pathname}#join=${this.roomId}`;
-        this.hud.showHostLink(url);
-        this.hud.toast("Reopened your room — share the link again if needed.", 4500);
+        await this.session.resume(joinId!);
+        if (role === "host") {
+          this.hud.showHostLink(`${location.origin}${location.pathname}#join=${this.roomId}`);
+        }
+        this.hud.toast("Reconnecting to your game…", 4000);
       } else if (role === "host") {
         this.roomId = await this.session.host();
         const url = `${location.origin}${location.pathname}#join=${this.roomId}`;

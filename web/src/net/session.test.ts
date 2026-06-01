@@ -19,11 +19,14 @@ function stubSignal() {
   };
 }
 
+// A factory that always hands back the SAME FakePeer, so tests can inspect it.
+function factory(p: FakePeer) { return () => p; }
+
 describe("Session", () => {
   it("host creates a room and exposes the join link id", async () => {
     const peer = new FakePeer();
     const signal = stubSignal();
-    const s = new Session({ peer, signal: signal as any, role: "host" });
+    const s = new Session({ makePeer: factory(peer), signal: signal as any, role: "host" });
     const id = await s.host();
     expect(id).toBe("ROOM");
     expect(signal.createRoom).toHaveBeenCalledOnce();
@@ -32,7 +35,7 @@ describe("Session", () => {
   it("guest fetches the offer and posts an answer", async () => {
     const peer = new FakePeer();
     const signal = stubSignal();
-    const s = new Session({ peer, signal: signal as any, role: "guest" });
+    const s = new Session({ makePeer: factory(peer), signal: signal as any, role: "guest" });
     await s.join("ROOM");
     expect(signal.fetchOffer).toHaveBeenCalledWith("ROOM");
     expect(signal.postAnswer).toHaveBeenCalled();
@@ -42,76 +45,75 @@ describe("Session", () => {
   it("delivers incoming wire messages to onMessage", async () => {
     const [a, b] = FakePeer.linked();
     const signal = stubSignal();
-    const s = new Session({ peer: a, signal: signal as any, role: "host" });
+    const s = new Session({ makePeer: factory(a), signal: signal as any, role: "host" });
     const got: any[] = [];
     s.onMessage((m) => got.push(m));
     b.send({ type: "move", delta: { ply: 0, col: 3, hash: "h" } });
     expect(got).toEqual([{ type: "move", delta: { ply: 0, col: 3, hash: "h" } }]);
   });
 
-  it("on reconnecting, the HOST issues an ICE-restart offer to the relay", async () => {
+  it("on reconnect, the HOST publishes a FRESH offer at a new epoch", async () => {
     const peer = new FakePeer();
     const signal = stubSignal();
-    const s = new Session({ peer, signal: signal as any, role: "host" });
+    const s = new Session({ makePeer: factory(peer), signal: signal as any, role: "host" });
     await s.host();
+    // make an answer available so the host handshake can complete
+    await signal.postAnswer("ROOM", "guest-answer", 1);
     peer.emitState("reconnecting");
-    await vi.waitFor(() => expect(peer.restarts).toBe(1));
-    expect(signal.pushOffer).toHaveBeenCalledWith("ROOM", "restart#1", 1);
+    await vi.waitFor(() => expect(signal.pushOffer).toHaveBeenCalledWith("ROOM", expect.any(String), 1), { timeout: 3000 });
   });
 
   it("re-emits 'connected' after a successful reconnect so the app reconciles", async () => {
     const peer = new FakePeer();
     const signal = stubSignal();
     const states: string[] = [];
-    const s = new Session({ peer, signal: signal as any, role: "host" });
+    const s = new Session({ makePeer: factory(peer), signal: signal as any, role: "host" });
     s.onState((st) => states.push(st));
     await s.host();
-    peer.emitState("reconnecting");
-    // The host restarts and (via the stub signal) gets an answer back.
     await signal.postAnswer("ROOM", "guest-answer", 1);
+    peer.emitState("reconnecting");
     await vi.waitFor(() => expect(states).toContain("connected"), { timeout: 3000 });
   });
 
-  it("rehost fetches current epoch, creates a fresh offer, pushes at epoch+1", async () => {
+  it("resume() as host re-publishes a fresh offer at epoch+1", async () => {
     const peer = new FakePeer();
     const signal = stubSignal();
     signal.store.offer = "old-sdp";
     signal.store.offerEpoch = 0;
-    const s = new Session({ peer, signal: signal as any, role: "host" });
-    await s.rehost("room123");
-    expect(signal.fetchOffer).toHaveBeenCalledWith("room123");
-    expect(peer.offers).toBe(1);
-    expect(signal.pushOffer).toHaveBeenCalledWith("room123", "offer#1", 1);
+    const s = new Session({ makePeer: factory(peer), signal: signal as any, role: "host" });
+    await s.resume("room123");
+    await signal.postAnswer("room123", "guest-answer", 1);
+    await vi.waitFor(() => expect(signal.pushOffer).toHaveBeenCalledWith("room123", expect.any(String), 1), { timeout: 3000 });
     expect(signal.store.offerEpoch).toBe(1);
   });
 
-  it("rehost background-polls for an answer and accepts it", async () => {
+  it("resume() as host accepts the guest's answer", async () => {
     const peer = new FakePeer();
     const acceptSpy = vi.spyOn(peer, "acceptAnswer");
     const signal = stubSignal();
-    const s = new Session({ peer, signal: signal as any, role: "host" });
-    await s.rehost("room123");
-    // simulate a guest posting an answer at the new epoch
+    const s = new Session({ makePeer: factory(peer), signal: signal as any, role: "host" });
+    await s.resume("room123");
     await signal.postAnswer("room123", "guest-answer", 1);
     await vi.waitFor(() => expect(acceptSpy).toHaveBeenCalledWith("guest-answer"), { timeout: 3000 });
   });
 
-  it("reconnectNow() triggers a host ICE-restart when the channel went silently dead", async () => {
+  it("reconnectNow() forces a host reconnect when the channel went silently dead", async () => {
     const peer = new FakePeer();
     const signal = stubSignal();
-    const s = new Session({ peer, signal: signal as any, role: "host" });
+    const s = new Session({ makePeer: factory(peer), signal: signal as any, role: "host" });
     await s.host();
+    await signal.postAnswer("ROOM", "guest-answer", 1);
     s.reconnectNow();
-    await vi.waitFor(() => expect(peer.restarts).toBe(1));
+    await vi.waitFor(() => expect(signal.pushOffer).toHaveBeenCalled(), { timeout: 3000 });
   });
 
-  it("on reconnecting, the GUEST does NOT issue an offer (no glare)", async () => {
+  it("on reconnect, the GUEST waits for a fresh offer (never publishes one)", async () => {
     const peer = new FakePeer();
     const signal = stubSignal();
-    const s = new Session({ peer, signal: signal as any, role: "guest" });
+    const s = new Session({ makePeer: factory(peer), signal: signal as any, role: "guest" });
     await s.join("ROOM");
     peer.emitState("reconnecting");
     await new Promise((r) => setTimeout(r, 20));
-    expect(peer.restarts).toBe(0);
+    expect(signal.pushOffer).not.toHaveBeenCalled();
   });
 });

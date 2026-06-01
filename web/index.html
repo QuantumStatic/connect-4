@@ -5,21 +5,28 @@
     <title>Connect 4</title>
     <style>
       html, body { margin: 0; padding: 0; background: #0f1115; color: #e7e7ea; font-family: system-ui, sans-serif; height: 100%; }
-      #app { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 16px; }
-      canvas { display: block; border-radius: 8px; }
-      .hud { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: center; }
-      .hud button, .hud select { background: #1c2030; color: #e7e7ea; border: 1px solid #2c3146; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+      #app { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 12px; }
+      canvas { display: block; border-radius: 8px; max-width: 100%; height: auto; }
+      /* On mobile: board first, controls below */
+      #canvas-host { order: 0; width: 100%; display: flex; justify-content: center; }
+      #canvas-host canvas { width: 100%; max-width: 480px; height: auto; }
+      .hud { order: 1; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; width: 100%; max-width: 480px; }
+      .hud button, .hud select {
+        background: #1c2030; color: #e7e7ea; border: 1px solid #2c3146;
+        padding: 10px 16px; border-radius: 10px; cursor: pointer;
+        font-size: 15px; min-height: 48px; flex: 1 1 auto; min-width: 80px;
+      }
       .hud button:disabled { opacity: 0.5; cursor: not-allowed; }
       .hud button.end-room { border-color: #6b2a3a; color: #e88; }
-      .p2p-toggle { font-size: 13px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
-      .status { min-width: 220px; display: inline-flex; align-items: center; gap: 8px; }
+      .p2p-toggle { font-size: 14px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; min-height: 48px; }
+      .status { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; width: 100%; justify-content: center; }
       .think-dot { width: 9px; height: 9px; border-radius: 50%; background: #e6c437; opacity: 0; transform: scale(0.6); transition: opacity 120ms; }
       .status.thinking .think-dot { opacity: 1; animation: think-pulse 0.9s ease-in-out infinite; }
       .status.thinking { color: #e6c437; }
       @keyframes think-pulse { 0%, 100% { transform: scale(0.6); opacity: 0.5; } 50% { transform: scale(1); opacity: 1; } }
       .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); max-width: 90vw; text-align: center; background: #3b1d1d; border: 1px solid #6b2a2a; padding: 8px 12px; border-radius: 6px; z-index: 10; box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
-      .linkbox { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
-      .link-input { width: 280px; background: #11141d; color: #e7e7ea; border: 1px solid #2c3146; border-radius: 6px; padding: 6px 8px; }
+      .linkbox { display: flex; gap: 8px; align-items: center; margin-top: 4px; width: 100%; flex-wrap: wrap; }
+      .link-input { width: 100%; min-width: 0; background: #11141d; color: #e7e7ea; border: 1px solid #2c3146; border-radius: 6px; padding: 8px; font-size: 13px; }
       .conn-chip { padding: 4px 10px; border-radius: 999px; font-size: 13px; border: 1px solid #2c3146; white-space: nowrap; }
       .conn-chip[data-state="connected"] { color: #3aa05a; border-color: #2f6b43; }
       .conn-chip[data-state="reconnecting"] { color: #e6c437; border-color: #6b5e1a; }
@@ -32,8 +39,8 @@
   </head>
   <body>
     <div id="app">
-      <div class="hud" id="hud"></div>
       <div id="canvas-host"></div>
+      <div class="hud" id="hud"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

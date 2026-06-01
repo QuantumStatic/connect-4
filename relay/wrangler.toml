@@ -1,10 +1,19 @@
 name = "connect4-relay"
 main = "src/index.ts"
 compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
 
 [[kv_namespaces]]
 binding = "ROOMS"
 id = "24380a2e1ab646bca8174e5e8ab22237"
+
+[[durable_objects.bindings]]
+name = "ROOMS_DO"
+class_name = "RoomDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomDO"]
 
 # TURN: set via `wrangler secret put TURN_KEY_ID` and `TURN_KEY_API_TOKEN`.
 # STUN needs no secret.

@@ -16,6 +16,10 @@
         padding: 14px 20px; border-radius: 12px; cursor: pointer;
         font-size: 18px; min-height: 60px; flex: 1 1 auto; min-width: 90px;
       }
+      /* On phones: stack controls full-width so each is a comfortable tap target */
+      @media (max-width: 640px) {
+        .hud button, .hud select { flex: 0 0 100%; min-width: 0; }
+      }
       .hud button:disabled { opacity: 0.5; cursor: not-allowed; }
       .hud button.end-room { border-color: #6b2a3a; color: #e88; }
       .p2p-toggle { font-size: 14px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; min-height: 48px; }

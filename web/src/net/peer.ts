@@ -3,8 +3,9 @@
 // the Peer interface so session logic can be tested with a fake. Non-trickle:
 // offer/answer resolve only after ICE gathering completes.
 import type { WireMsg } from "../game/protocol";
+import type { ConnState } from "./transport";
 
-export type ConnState = "connecting" | "connected" | "reconnecting" | "disconnected";
+export type { ConnState };
 
 export interface Peer {
   createOffer(): Promise<string>;

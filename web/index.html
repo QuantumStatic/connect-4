@@ -5,16 +5,16 @@
     <title>Connect 4</title>
     <style>
       html, body { margin: 0; padding: 0; background: #0f1115; color: #e7e7ea; font-family: system-ui, sans-serif; height: 100%; }
-      #app { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 12px; }
+      #app { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 8px; }
       canvas { display: block; border-radius: 8px; max-width: 100%; height: auto; }
       /* On mobile: board first, controls below */
       #canvas-host { order: 0; width: 100%; display: flex; justify-content: center; }
-      #canvas-host canvas { width: 100%; max-width: 480px; height: auto; }
-      .hud { order: 1; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; width: 100%; max-width: 480px; }
+      #canvas-host canvas { width: 100%; height: auto; }
+      .hud { order: 1; display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; justify-content: center; width: 100%; }
       .hud button, .hud select {
         background: #1c2030; color: #e7e7ea; border: 1px solid #2c3146;
-        padding: 10px 16px; border-radius: 10px; cursor: pointer;
-        font-size: 15px; min-height: 48px; flex: 1 1 auto; min-width: 80px;
+        padding: 14px 20px; border-radius: 12px; cursor: pointer;
+        font-size: 18px; min-height: 60px; flex: 1 1 auto; min-width: 90px;
       }
       .hud button:disabled { opacity: 0.5; cursor: not-allowed; }
       .hud button.end-room { border-color: #6b2a3a; color: #e88; }

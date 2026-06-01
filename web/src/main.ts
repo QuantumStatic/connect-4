@@ -52,7 +52,13 @@ class Game {
 
   constructor(public scene: Scene, public hud: Hud, public sfx: Sfx) {}
 
-  private sideToColor(pref: SidePref): Cell { return pref === "first" ? "yellow" : "green"; }
+  /** Resolve the current side preference to a concrete color. "random" rolls a
+   *  fresh coin each call (so each New Game re-rolls). Yellow always moves first. */
+  private resolveSide(): Cell {
+    if (this.sidePref === "first") return "yellow";
+    if (this.sidePref === "second") return "green";
+    return Math.random() < 0.5 ? "yellow" : "green";
+  }
 
   async start(): Promise<void> {
     const saved = load();
@@ -129,9 +135,9 @@ class Game {
     // vs-AI: you play your chosen side (yellow=1st, green=2nd). 2P: no "you".
     const isAi = mode === "good" || mode === "great";
     this.hud.showSidePicker(isAi);
-    this.localSide = isAi ? this.sideToColor(this.sidePref) : null;
+    this.localSide = isAi ? this.resolveSide() : null;
     save(this.state, this.mode, this.localSide);
-    void this.pump(); // if you chose 2nd, the AI (yellow) opens
+    void this.pump(); // if you chose 2nd (or rolled green), the AI (yellow) opens
   }
 
   /** Side picker changed. Re-seat the local player and restart so the choice
@@ -140,11 +146,11 @@ class Game {
   setSide(pref: SidePref): void {
     this.sidePref = pref;
     if (this.mode === "good" || this.mode === "great") {
-      this.localSide = this.sideToColor(pref);
+      this.localSide = this.resolveSide();
       this.startFreshGame(this.gen + 1); // fresh board → pump opens for the AI if you're 2nd
     } else if (this.mode === "friend" && this.roomId && !this.peerPresent) {
       // Host re-seats before the opponent connects; refresh the link's seat.
-      this.localSide = this.sideToColor(pref);
+      this.localSide = this.resolveSide();
       this.remoteSide = this.localSide === "yellow" ? "green" : "yellow";
       this.hud.showLocalSide(this.localSide);
       this.hud.showScore(this.score, this.localSide);
@@ -248,6 +254,10 @@ class Game {
     // Ignore while a chip is mid-drop — otherwise the in-flight animation
     // would resolve onto a fresh state and plant a phantom chip.
     if (this.busy) return;
+    // vs-AI with "Random": re-roll who opens each New Game.
+    if ((this.mode === "good" || this.mode === "great") && this.sidePref === "random") {
+      this.localSide = this.resolveSide();
+    }
     this.startFreshGame(this.gen + 1); // bump generation so the reset wins on resync
     // Tell the peer to reset too, carrying the new generation. Without this the
     // remote keeps the finished board until the next reconnect/sync.
@@ -447,19 +457,18 @@ class Game {
     // host encoded in the link (default green, matching pre-feature links).
     if (resuming && saved!.humanSide) {
       this.localSide = saved!.humanSide;
+      // Restore a concrete picker value for the resumed seat.
+      if (role === "host") this.sidePref = this.localSide === "yellow" ? "first" : "second";
     } else if (role === "host") {
-      this.localSide = this.sideToColor(this.sidePref);
+      this.localSide = this.resolveSide(); // rolls now if "random"
     } else {
       this.localSide = urlParams.get("seat") === "yellow" ? "yellow" : "green";
     }
     this.remoteSide = this.localSide === "yellow" ? "green" : "yellow";
     this.peerPresent = false;
-    // Reflect the host's seat in the picker; only the host may change it.
+    // Show the picker for the host (keeping their chosen pref, incl. "random").
     this.hud.showSidePicker(role === "host");
-    if (role === "host") {
-      this.sidePref = this.localSide === "yellow" ? "first" : "second";
-      this.hud.setSideValue(this.sidePref);
-    }
+    if (role === "host") this.hud.setSideValue(this.sidePref);
     // Restore the in-progress board + generation on reload; otherwise start clean
     // (a fresh guest will adopt the host's state via the first sync).
     if (resuming) {

@@ -1,7 +1,7 @@
 // web/src/ui/hud.ts
 import type { Mode } from "../game/persist";
 
-export type SidePref = "first" | "second";
+export type SidePref = "first" | "second" | "random";
 
 export interface HudCallbacks {
   onModeChange: (mode: Mode) => void;
@@ -49,6 +49,7 @@ export class Hud {
     for (const [value, label] of [
       ["first", "You: 1st (yellow)"],
       ["second", "You: 2nd (green)"],
+      ["random", "You: Random 🎲"],
     ] as const) {
       const opt = document.createElement("option");
       opt.value = value; opt.textContent = label;
@@ -174,8 +175,11 @@ export class Hud {
   /** Chosen transport for a new friend game. */
   transport(): "relay" | "p2p" { return this.p2pCheck.checked ? "p2p" : "relay"; }
 
-  /** Whether the local player wants to move first or second. */
-  side(): SidePref { return this.sideSel.value === "second" ? "second" : "first"; }
+  /** Whether the local player wants to move first, second, or randomly. */
+  side(): SidePref {
+    const v = this.sideSel.value;
+    return v === "second" || v === "random" ? v : "first";
+  }
 
   /** Show/hide the side picker (vs-AI always; friend host until connected). */
   showSidePicker(show: boolean): void { this.sideSel.style.display = show ? "" : "none"; }

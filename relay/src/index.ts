@@ -2,9 +2,11 @@
 // Stateless signaling relay. Stores only opaque SDP in KV; never game state.
 import { createRoom, getRoom, putOffer, putAnswer, deleteRoom } from "./rooms";
 import { corsHeaders } from "./cors";
+export { RoomDO } from "./room";
 
 interface Env {
   ROOMS: KVNamespace;
+  ROOMS_DO: DurableObjectNamespace;
   TURN_KEY_ID?: string;
   TURN_KEY_API_TOKEN?: string;
   ALLOWED_ORIGIN?: string;

@@ -33,9 +33,20 @@ describe("RoomDO", () => {
     await next(a); // welcome
     const b = await connect("room-fwd");
     await next(b); // welcome
+    // Set up a self-echo promise on `a` before sending
+    const selfEcho = new Promise<any>((resolve) =>
+      a.addEventListener("message", (e: MessageEvent) => resolve(JSON.parse(e.data as string)), { once: true }),
+    );
     const got = next(b);
     a.send(JSON.stringify({ type: "move", delta: { ply: 0, col: 3, hash: "h" } }));
+    // Confirm `b` receives it
     expect(await got).toMatchObject({ type: "move", delta: { ply: 0, col: 3 } });
+    // Verify `a` did NOT receive its own message back
+    const noEcho = await Promise.race([
+      selfEcho.then(() => "echoed"),
+      new Promise<string>((r) => setTimeout(() => r("silent"), 50)),
+    ]);
+    expect(noEcho).toBe("silent");
   });
 
   it("caches the last sync and replays it to a socket that connects later", async () => {
@@ -43,7 +54,7 @@ describe("RoomDO", () => {
     await next(a); // welcome
     a.send(JSON.stringify({ type: "sync", gen: 2, log: "334", score: { yellow: 1, green: 0 } }));
     // small delay so the DO processes the sync before B connects
-    await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, 50));
     const b = await connect("room-cache");
     expect(await next(b)).toMatchObject({ t: "welcome", color: "green" });
     expect(await next(b)).toMatchObject({ type: "sync", gen: 2, log: "334" });

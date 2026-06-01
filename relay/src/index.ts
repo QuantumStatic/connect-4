@@ -128,6 +128,13 @@ export default {
       }
     }
 
+    // GET /ws/:id  (Durable Object websocket relay)
+    if (parts[0] === "ws" && parts[1]) {
+      if (req.headers.get("Upgrade") !== "websocket") return empty(426, req, env);
+      const stub = env.ROOMS_DO.get(env.ROOMS_DO.idFromName(parts[1]));
+      return stub.fetch(req);
+    }
+
     return empty(404, req, env);
   },
 };

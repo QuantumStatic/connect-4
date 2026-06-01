@@ -77,6 +77,24 @@ describe("relay router", () => {
   it("DELETE is idempotent — deleting a missing room still returns 204", async () => {
     expect((await call("DELETE", "/room/does-not-exist")).status).toBe(204);
   });
+
+  it("GET /ws/:id with Upgrade routes to the DO and returns 101", async () => {
+    const res = await worker.fetch(
+      new Request("https://relay/ws/abc", { headers: { Upgrade: "websocket" } }),
+      env,
+      createExecutionContext(),
+    );
+    expect(res.status).toBe(101);
+  });
+
+  it("GET /ws/:id without Upgrade returns 426", async () => {
+    const res = await worker.fetch(
+      new Request("https://relay/ws/abc"),
+      env,
+      createExecutionContext(),
+    );
+    expect(res.status).toBe(426);
+  });
 });
 
 describe("GET /ice TURN branch", () => {

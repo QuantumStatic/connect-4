@@ -380,21 +380,25 @@ class Game {
 
     const peer = new RtcPeer(ice, role);
     this.session = new Session({ peer, role });
-    // 30s wall-clock cap on the initial handshake. Common failure mode: the
-    // host closed their tab before the guest opened the link — the guest
-    // would otherwise spin forever polling for an answer no one will read.
+    // 30s cap on the initial handshake — but ONLY for a guest, who is joining an
+    // existing room and should connect quickly. A host legitimately waits
+    // (often minutes) for a friend to open the link, so it has no timeout and
+    // keeps its share-link visible until someone connects or it ends the room.
     let connected = false;
-    const handshakeTimeout = window.setTimeout(() => {
-      if (!connected) this.handshakeFailed(role);
-    }, 30_000);
+    let handshakeTimeout: number | undefined;
+    if (role === "guest") {
+      handshakeTimeout = window.setTimeout(() => {
+        if (!connected) this.handshakeFailed(role);
+      }, 30_000);
+    }
     this.session.onState((s) => {
       this.hud.showConnState(s);
       if (s === "connected") {
         connected = true;
-        window.clearTimeout(handshakeTimeout);
+        if (handshakeTimeout !== undefined) window.clearTimeout(handshakeTimeout);
         this.sendSync(); // exchange full state (gen + log + score) on every (re)connect
-      } else if (s === "disconnected" && !connected) {
-        window.clearTimeout(handshakeTimeout);
+      } else if (s === "disconnected" && !connected && role === "guest") {
+        if (handshakeTimeout !== undefined) window.clearTimeout(handshakeTimeout);
         this.handshakeFailed(role);
       }
     });

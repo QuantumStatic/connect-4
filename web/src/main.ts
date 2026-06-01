@@ -135,11 +135,21 @@ class Game {
     }
     if (this.roomId) { void deleteRoom(this.roomId); this.roomId = ""; }
     this.remoteSide = null;
+    this.clearJoinHash(); // so a later "Play a friend" hosts a fresh room, not the dead one
     this.hud.showConnState(null);
     this.hud.hideHostLink();
     this.hud.showLocalSide(null);
     this.hud.showScore(null);
     this.hud.showEndRoom(false);
+  }
+
+  /** Strip "#join=..." from the URL without reloading. After leaving a room the
+   *  stale id must go, otherwise startFriend would try to rejoin the dead room
+   *  instead of creating a new one. */
+  private clearJoinHash(): void {
+    if (location.hash.includes("join=")) {
+      history.replaceState(null, "", location.pathname + location.search);
+    }
   }
 
   /** "Resync" button: force an immediate state reconciliation with the peer
@@ -422,9 +432,11 @@ class Game {
   private handshakeFailed(role: "host" | "guest", error?: unknown): void {
     if (!this.session) return; // already torn down
     console.warn("P2P handshake failed", { role, error });
+    if (this.heartbeat !== null) { clearInterval(this.heartbeat); this.heartbeat = null; }
     this.session.close();
     this.session = null;
     this.remoteSide = null;
+    this.clearJoinHash(); // don't auto-retry the unreachable room on the next attempt
     this.hud.showConnState("disconnected");
     this.hud.hideHostLink();
     this.hud.showLocalSide(null);

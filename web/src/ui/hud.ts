@@ -23,6 +23,8 @@ export class Hud {
   private connChip = document.createElement("span");
   private sideChip = document.createElement("span");
   private scoreChip = document.createElement("span");
+  private p2pToggle = document.createElement("label");
+  private p2pCheck = document.createElement("input");
 
   constructor(private root: HTMLElement, cbs: HudCallbacks, initialMode: Mode) {
     this.statusEl.className = "status";
@@ -61,7 +63,11 @@ export class Hud {
     this.sideChip.style.display = "none";
     this.scoreChip.className = "score-chip";
     this.scoreChip.style.display = "none";
-    root.append(this.scoreChip, this.sideChip, this.connChip, this.linkBox);
+    this.p2pCheck.type = "checkbox";
+    this.p2pToggle.className = "p2p-toggle";
+    this.p2pToggle.style.display = "none";
+    this.p2pToggle.append(this.p2pCheck, document.createTextNode(" Direct (P2P)"));
+    root.append(this.scoreChip, this.sideChip, this.connChip, this.linkBox, this.p2pToggle);
   }
 
   setStatus(text: string): void {
@@ -149,6 +155,12 @@ export class Hud {
       this.scoreChip.textContent = `Yellow ${score.yellow} – ${score.green} Green`;
     }
   }
+
+  /** Chosen transport for a new friend game. */
+  transport(): "relay" | "p2p" { return this.p2pCheck.checked ? "p2p" : "relay"; }
+
+  /** Show/hide the transport toggle (only visible while setting up friend mode). */
+  showTransportToggle(show: boolean): void { this.p2pToggle.style.display = show ? "" : "none"; }
 
   /** Show/refresh the connection-status chip. */
   showConnState(state: "connecting" | "connected" | "reconnecting" | "disconnected" | null): void {

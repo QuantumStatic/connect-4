@@ -91,3 +91,18 @@ describe("Hud end-room button", () => {
     expect(btn.style.display).toBe("none");
   });
 });
+
+describe("Hud transport toggle", () => {
+  it("defaults to relay and reports p2p when checked", () => {
+    const root = document.createElement("div");
+    const hud = new Hud(
+      root,
+      { onModeChange: () => {}, onNewGame: () => {}, onHint: () => {}, onEndRoom: () => {}, onResync: () => {} },
+      "2P",
+    );
+    expect(hud.transport()).toBe("relay");
+    const box = root.querySelector(".p2p-toggle input") as HTMLInputElement;
+    box.checked = true;
+    expect(hud.transport()).toBe("p2p");
+  });
+});

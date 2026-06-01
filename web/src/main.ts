@@ -232,9 +232,12 @@ class Game {
   async hint(): Promise<void> {
     if (!this.solverOnline || this.state.status !== "ongoing") return;
     try {
-      const res = await analyze(this.state.moves, null);
+      const res = await analyze(this.state.moves, null, (frac) =>
+        this.hud.setThinking(`Loading hint engine… ${Math.round(frac * 100)}% (one-time)`));
+      this.hud.setThinking(null);
       this.scene.flashHintColumn(res.bestMove);
     } catch (e) {
+      this.hud.setThinking(null);
       if (e instanceof SolverOffline) this.handleOffline();
     }
   }
@@ -324,7 +327,10 @@ class Game {
   private async solve(moves: string): Promise<number | null> {
     const depth = this.mode === "good" ? GOOD_DEPTH : null;
     try {
-      const res = await analyze(moves, depth);
+      const res = await analyze(moves, depth, (frac) => {
+        // Only fires while the one-time opening book downloads (Great mode).
+        if (depth === null) this.hud.setThinking(`Loading Great player… ${Math.round(frac * 100)}% (one-time)`);
+      });
       return res.bestMove;
     } catch (e) {
       if (e instanceof SolverOffline) this.handleOffline();
@@ -567,23 +573,12 @@ class Game {
     else if (verdict === "desync" || verdict === "duplicate") { this.sendSync(); }
   }
 
-  private handleOffline(reason: "runtime" | "no-local-solver" = "runtime"): void {
+  private handleOffline(): void {
     if (!this.solverOnline) return; // idempotent — only act on the first failure
     this.solverOnline = false;
     this.hud.setSolverOffline(true);
-    if (reason === "no-local-solver") {
-      this.hud.toast(
-        "vs-AI modes need the local Python solver. Hot-seat and Play-a-friend work online — clone the repo to play vs CPU.",
-        6500,
-      );
-    } else {
-      this.hud.toast("Solver offline — AI/hint disabled. Hot-seat still works.");
-    }
+    this.hud.toast("AI engine failed to load — AI/hint disabled. Hot-seat still works.");
   }
-
-  /** Hosted (Cloudflare Pages) builds have no local solver; flag it up-front so
-   *  Good/Great are disabled in the menu instead of failing on first move. */
-  markNoLocalSolver(): void { this.handleOffline("no-local-solver"); }
 }
 
 function randomRoomId(): string {
@@ -616,11 +611,9 @@ async function main() {
     onResync: () => game.resync(),
   }, "2P");
   const game = new Game(scene, hud, sfx);
-  // In hosted/production builds there's no local Python solver running on
-  // 127.0.0.1:8000, so disable Good/Great up-front (with a friendly explainer)
-  // rather than letting the user pick a mode that will silently fail on first
-  // move. Hot-seat (2P) and Play-a-friend (P2P) still work fully.
-  if (import.meta.env.PROD) game.markNoLocalSolver();
+  // The AI runs in-browser via WebAssembly, so every mode works everywhere with
+  // no backend. The only first-use cost is a one-time opening-book download for
+  // Great/Hint, surfaced as progress on the thinking indicator.
   if (new URLSearchParams(location.hash.slice(1)).get("join")) {
     await game.startFriend();
   } else {

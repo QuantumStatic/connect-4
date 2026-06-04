@@ -1,5 +1,7 @@
 # Connect 4
 
+**▶ Play: https://connect4-65t.pages.dev**
+
 Connect 4 with a perfect-play AI ([Pascal Pons solver](https://github.com/PascalPons/connect4), vendored C++), GPU-accelerated 2D graphics (PixiJS v8), weighty falling-chip physics, plastic-impact audio, 2-player hot-seat, online play with a friend, and game resume on reload.
 
 The AI runs **entirely in the browser** via WebAssembly — the same Pons C++ compiled with Emscripten (see [`solver/wasm/`](solver/wasm/)). No backend is needed to play vs CPU online; the deployed site is fully self-contained. The 32 MB opening book is lazy-loaded from the relay (R2-backed) on first use of the Great player / Hint and cached on-device, so it downloads once. The Python/FastAPI backend below is now **optional**, kept for local development and as the reference solver implementation.
